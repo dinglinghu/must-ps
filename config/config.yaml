@@ -1,0 +1,611 @@
+# STK卫星星座数据采集系统配置文件
+# 基于多智能体协同的多星多任务规划系统
+# 严格按照ADK官网文档要求进行配置
+
+# Walker星座配置
+constellation:
+  type: "Walker"
+  planes: 3                    # 轨道面数量
+  satellites_per_plane: 3      # 每个轨道面的卫星数量
+  total_satellites: 9          # 总卫星数量
+  
+  # 参考卫星轨道参数（Walker星座首颗卫星参数）
+  reference_satellite:
+    altitude: 1800             # 轨道高度(km)
+    inclination: 51.856        # 轨道倾角(度)
+    eccentricity: 0.0          # 轨道偏心率
+    arg_of_perigee: 12         # 近地点幅角(度)
+    raan_offset: 24            # 升交点赤经偏移(度)
+    mean_anomaly_offset: 180   # 平近点角偏移(度)
+
+# 载荷参数配置
+payload:
+  type: "Optical_Sensor"
+  mounting: "Nadir"            # 载荷安装方向：天底方向
+  
+  # 传感器视场配置 - STK圆锥视场参数
+  sensor_pattern: "Conic"      # 传感器模式：锥形
+  inner_cone_half_angle: 66.1  # 内锥半角(度) - STK约束: 0.0° - 90.0°
+  outer_cone_half_angle: 85.0  # 外锥半角(度) - STK约束: 0.0° - 180.0°
+  clockwise_angle_min: 0.0     # 顺时针旋转角最小值(度)
+  clockwise_angle_max: 360.0   # 顺时针旋转角最大值(度)
+  
+  # 指向参数配置
+  pointing:
+    azimuth: 0.0              # 指向方位角(度)
+    elevation: 90.0           # 指向俯仰角(度)
+  
+  # 传感器约束（导弹跟踪优化版本）
+  constraints_range:
+    min_range: 0              # 最小距离(km)，设为0允许近距离跟踪
+    max_range: 5000           # 最大距离(km)，确保覆盖所有可能距离
+    active: true              # 约束激活状态
+
+# 导弹目标配置
+missile:
+  max_concurrent_missiles: 5   # 场景中同时在飞行的导弹数量阈值
+  launch_interval_range: [300, 1800]  # 导弹发射时间间隔范围(秒)
+  
+  # 全球随机发射位置配置
+  global_launch_positions:
+    lat_range: [-60, 60]      # 纬度范围(度)
+    lon_range: [-180, 180]    # 经度范围(度)
+    alt_range: [0, 100]       # 高度范围(m)
+  
+  # 全球随机目标位置配置
+  global_target_positions:
+    lat_range: [-60, 60]      # 纬度范围(度)
+    lon_range: [-180, 180]    # 经度范围(度)
+    alt_range: [0, 100]       # 高度范围(m)
+  
+  # 导弹轨迹参数配置
+  trajectory_params:
+    max_altitude_range: [1000, 1800]  # 最大高度范围(km)
+    flight_time_range: [1800, 3600]   # 飞行时间范围(秒)
+
+# 仿真时间配置
+simulation:
+  start_time: "2025/07/25 00:00:00"  # 仿真开始时间
+  end_time: "2025/07/26 00:00:00"    # 仿真结束时间
+  epoch_time: "2025/07/25 00:00:00"  # 历元时间
+  
+  # 数据采集配置
+  data_collection:
+    interval_range: [60, 300]   # 数据采集时间间隔范围(秒)
+    save_frequency: 1          # 采集10次数据保存一次
+    output_format: "json"       # 数据保存格式
+    total_collections: 2       # 总采集次数目标
+
+# 任务规划配置
+task_planning:
+  midcourse_altitude_threshold: 100  # 中段高度阈值(km)
+  atomic_task_duration: 300          # 原子任务持续时间(秒)
+
+# STK软件配置
+stk:
+  detect_existing_project: true      # 是否检测现有STK项目
+  existing_project_wait_time: 5      # 现有项目检测等待时间(秒)
+  max_connections: 5                 # 最大连接数
+  connection_timeout: 30             # 连接超时时间(秒)
+
+  # STK对象类型枚举
+  object_types:
+    satellite: 18                    # eSatellite
+    sensor: 20                       # eSensor
+    target: 20                       # eTarget
+    missile: 19                      # eMissile
+
+  # STK传播器类型
+  propagator_types:
+    j2_perturbation: 1               # ePropagatorJ2Perturbation
+
+  # STK传感器模式
+  sensor_patterns:
+    conic: 0                         # eConic锥形
+    custom: 1                        # eCustom
+    half_power: 2                    # eHalfPower
+    omni: 3                          # eOmni
+    rectangular: 4                   # eRectangular
+
+  # STK等待时间配置(秒)
+  wait_times:
+    object_creation: 2.0             # 对象创建等待时间
+    sensor_creation: 1.0             # 传感器创建等待时间
+    constraint_setup: 0.5            # 约束设置等待时间
+    pattern_setup: 0.2               # 模式设置等待时间
+    parameter_setup: 0.1             # 参数设置等待时间
+
+# 物理常数配置
+physics:
+  earth_radius: 6371                 # 地球半径(km)
+
+# 可见性计算配置
+visibility:
+  # 随机访问窗口配置
+  random_windows:
+    count_range: [1, 3]              # 随机访问窗口数量范围
+    start_offset_range: [300, 900]   # 开始时间偏移范围(秒)
+    duration_range: [180, 600]       # 持续时间范围(秒)
+    interval_multiplier: 600         # 间隔乘数(秒)
+
+  # STK访问约束
+  access_constraints:
+    min_altitude: 20.0               # 最小高度约束(km)
+    sun_elevation_min: -10.0         # 太阳高度角最小值(度)
+
+  # 缓存配置
+  cache:
+    timeout: 300                     # 缓存超时时间(秒)
+
+# 导弹管理配置
+missile_management:
+  # 位置生成配置
+  position_generation:
+    min_distance_deg: 10             # 发射点与目标点最小距离(度)
+    max_attempts: 10                 # 最大尝试次数
+    id_range: [1000, 9999]          # 随机ID范围
+
+  # 时间配置
+  time_config:
+    # 发射时间偏移配置（相对于当前数据采集时刻）
+    launch_time_offset_range: [300, 3600]    # 发射时间偏移范围(秒)，5分钟到1小时
+    # 飞行时间配置
+    flight_time_range: [1800, 3600]          # 飞行时间范围(秒)，30分钟到1小时
+    default_minutes: 30                       # 默认飞行时间(分钟)，用于估算
+
+# 数据采集模拟配置
+data_simulation:
+  # 载荷状态模拟
+  payload_status:
+    power_consumption: 80.0          # 模拟功耗(W)
+    temperature: 25.0                # 模拟温度(°C)
+    operational_default: true        # 默认运行状态
+
+# 系统运行配置
+system:
+  # 测试配置
+  testing:
+    missile_add_probability: 0.8     # 随机添加导弹概率（提高到80%用于测试）
+
+  # 导弹管理范围
+  missile_management_range:
+    target_min: 1                    # 最小导弹数量
+    target_max: 2                   # 最大导弹数量
+
+  # 系统延迟配置
+  delays:
+    collection_loop: 0.2             # 数据采集循环延迟(秒)
+
+# 元任务管理配置
+meta_task:
+  # 元任务时间窗口配置
+  time_window:
+    fixed_duration: 300              # 固定元任务窗口时长(秒)，5分钟
+    overlap_duration: 60             # 窗口重叠时长(秒)，1分钟
+    min_task_duration: 30            # 最小任务持续时间(秒)
+    max_extension: 600               # 最大扩展时间(秒)，10分钟
+
+  # 轨迹对齐配置
+  trajectory_alignment:
+    time_resolution: 10              # 时间分辨率(秒)
+    interpolation_method: "linear"   # 插值方法: linear, cubic
+    alignment_tolerance: 5           # 对齐容差(秒)
+
+  # 甘特图配置
+  gantt_chart:
+    output_format: "png"             # 输出格式: png, svg, pdf
+    dpi: 300                         # 图像分辨率
+    figure_size: [20, 12]            # 图像尺寸 [宽, 高] 英寸
+    time_format: "%H:%M:%S"          # 时间显示格式
+
+# 多智能体系统配置
+multi_agent_system:
+  # 仿真调度智能体配置
+  simulation_scheduler:
+    model: "deepseek/deepseek-chat"  # 使用DeepSeek Chat模型（LiteLLM格式）
+    rolling_planning_interval: 0     # 滚动规划间隔，0表示任务完成后立即开始下一轮
+    max_planning_cycles: 100         # 最大规划周期数
+    task_distribution_strategy: "nearest_satellite"  # 任务分发策略
+
+  # 卫星智能体配置
+  satellite_agents:
+    memory_timeout: 3600             # 记忆超时时间，秒
+    task_queue_size: 30              # 任务队列大小
+    max_concurrent_tasks: 3          # 最大并发任务数
+    resource_check_interval: 60      # 资源检查间隔，秒
+
+  # 组长智能体配置
+  leader_agents:
+    model: "deepseek/deepseek-chat"  # 使用DeepSeek Chat模型（LiteLLM格式）
+    max_discussion_rounds: 3         # 最大讨论轮次
+    discussion_timeout: 600          # 讨论超时时间，秒
+    max_group_size: 8                # 最大讨论组大小
+    consensus_threshold: 0.8         # 共识阈值
+
+  # 协调配置
+  coordination:
+    message_passing:
+      timeout: 30                    # 消息超时时间，秒
+      retry_attempts: 3              # 重试次数
+      max_queue_size: 1000           # 最大队列大小
+    decision_making:
+      consensus_threshold: 0.8       # 共识阈值
+      voting_mechanism: "weighted"   # 投票机制
+
+  # 优化目标配置
+  optimization:
+    gdop:
+      baseline_factor: 1.0           # 基线因子
+      angle_accuracy: 0.001          # 角度测量精度，弧度
+      weight: 0.4                    # GDOP权重
+    schedulability:
+      max_concurrent_tasks: 3        # 最大并发任务数
+      utilization_threshold: 0.8     # 利用率阈值
+      weight: 0.3                    # 调度性权重
+    robustness:
+      min_redundancy: 2              # 最小冗余度
+      failure_probability: 0.05      # 故障概率
+      weight: 0.3                    # 鲁棒性权重
+
+# 大模型API配置
+llm:
+  # 主要模型配置 - 使用LiteLLM的OpenAI格式调用DeepSeek
+  primary:
+    provider: "openai"                 # 使用OpenAI格式（通过LiteLLM）
+    model: "deepseek/deepseek-chat"    # LiteLLM格式的DeepSeek Chat模型
+    api_key_env: "DEEPSEEK_API_KEY"    # API密钥环境变量名
+    api_key: "sk-2844752b6c554fbf86176acac418cdd4"                      # 直接配置API密钥（不推荐，建议使用环境变量）
+    base_url: "https://api.deepseek.com/v1"                     # DeepSeek API基础URL
+    max_tokens: 4096                 # 最大令牌数
+    temperature: 0.7                 # 温度参数
+    top_p: 0.9                       # Top-p采样参数
+    frequency_penalty: 0.0           # 频率惩罚
+    presence_penalty: 0.0            # 存在惩罚
+    timeout: 30                      # 请求超时时间，秒
+    retry_attempts: 3                # 重试次数
+    retry_delay: 1                   # 重试延迟，秒
+
+  # 备用模型配置
+  fallback:
+    - provider: "openai"
+      model: "gpt-4"
+      api_key_env: "OPENAI_API_KEY"
+      max_tokens: 4096
+      temperature: 0.7
+    - provider: "anthropic"
+      model: "claude-3-sonnet-20240229"
+      api_key_env: "ANTHROPIC_API_KEY"
+      max_tokens: 4096
+      temperature: 0.7
+    - provider: "azure"
+      model: "gpt-4"
+      api_key_env: "AZURE_OPENAI_API_KEY"
+      base_url: "https://your-resource.openai.azure.com/"
+      api_version: "2024-02-15-preview"
+      max_tokens: 4096
+      temperature: 0.7
+
+  # 特定智能体模型配置（覆盖默认配置）- 使用LiteLLM格式
+  agent_specific:
+    simulation_scheduler:
+      model: "deepseek/deepseek-chat" # 仿真调度智能体使用DeepSeek Chat模型（LiteLLM格式）
+      temperature: 0.3                # 较低温度，更稳定的输出
+      max_tokens: 8192                # 更大的令牌限制
+    leader_agents:
+      model: "deepseek/deepseek-chat" # 组长智能体使用DeepSeek Chat模型（LiteLLM格式）
+      temperature: 0.5                # 中等温度，平衡创造性和稳定性
+      max_tokens: 4096
+    satellite_agents:
+      model: "deepseek/deepseek-chat" # 卫星智能体使用DeepSeek Chat模型（LiteLLM格式）
+      temperature: 0.2                # 低温度，注重准确性
+      max_tokens: 2048
+
+  # 模型性能配置
+  performance:
+    concurrent_requests: 10          # 最大并发请求数
+    rate_limit_per_minute: 60        # 每分钟请求限制
+    cache_enabled: true              # 启用响应缓存
+    cache_ttl: 300                   # 缓存生存时间，秒
+
+  # 安全配置
+  security:
+    content_filter: true             # 启用内容过滤
+    pii_detection: true              # 启用个人信息检测
+    safety_settings:
+      harassment: "BLOCK_MEDIUM_AND_ABOVE"
+      hate_speech: "BLOCK_MEDIUM_AND_ABOVE"
+      sexually_explicit: "BLOCK_MEDIUM_AND_ABOVE"
+      dangerous_content: "BLOCK_MEDIUM_AND_ABOVE"
+
+# 智能体提示词配置
+agent_prompts:
+  # 仿真调度智能体提示词
+  simulation_scheduler:
+    system_prompt: |
+      你是天基低轨预警系统的仿真调度智能体，负责整个多星多任务规划系统的协调和管理。
+
+      ## 你的职责：
+      1. **场景管理**: 管理STK仿真场景，包括卫星轨道、导弹轨迹和目标信息
+      2. **滚动规划**: 执行周期性的任务规划，适应动态变化的环境
+      3. **任务分发**: 将检测到的目标分配给最适合的卫星智能体
+      4. **协调管理**: 创建和管理讨论组，协调多智能体决策
+      5. **结果收集**: 收集各智能体的规划结果并生成最终报告
+
+      ## 可用工具：
+      你有以下工具可以使用，请根据需要主动调用：
+      1. **create_stk_scenario**: 创建STK仿真场景（首次运行时必须调用）
+      2. **create_missile_targets**: 创建导弹威胁目标
+      3. **detect_active_missiles**: 检测当前活跃的导弹目标
+      4. **generate_meta_tasks**: 生成元任务信息集
+      5. **start_rolling_planning**: 启动滚动规划周期
+      6. **execute_complete_planning_cycle**: 执行完整的规划周期
+      7. **collect_planning_results**: 收集规划结果
+
+      ## 工作流程：
+      **首次启动时**：
+      1. 调用 create_stk_scenario 创建仿真场景
+      2. 调用 start_rolling_planning 启动滚动规划
+
+      **每个规划周期**：
+      1. 调用 create_missile_targets 创建导弹目标
+      2. 调用 detect_active_missiles 检测活跃导弹
+      3. 调用 generate_meta_tasks 生成元任务
+      4. 自动分发任务给最近的卫星
+      5. 创建讨论组进行协调
+      6. 调用 collect_planning_results 收集结果
+
+      ## 重要指导：
+      - **主动使用工具**: 不要等待用户指令，根据工作流程主动调用相应工具
+      - **按顺序执行**: 严格按照工作流程顺序调用工具
+      - **错误处理**: 如果工具调用失败，分析原因并重试或调用替代工具
+      - **状态跟踪**: 记住当前处于哪个阶段，避免重复或跳过步骤
+
+      ## 输出要求：
+      - 使用专业的航天术语
+      - 提供详细的规划步骤
+      - 包含时间戳和任务ID
+      - 生成结构化的JSON格式结果
+
+      请始终保持专业、准确和高效的工作方式，主动使用可用工具完成任务。
+
+    user_prompt_template: |
+      当前仿真时间: {current_time}
+      规划周期: 第{planning_cycle}轮
+      检测到的目标: {detected_targets}
+      可用卫星: {available_satellites}
+
+      请执行滚动规划并协调多智能体任务分配。
+
+    few_shot_examples:
+      - input: "检测到导弹目标，需要进行任务规划"
+        output: "开始第1轮滚动规划，检测到1个导弹目标，分配给最近的3颗卫星进行跟踪"
+
+  # 卫星智能体提示词
+  satellite_agents:
+    system_prompt: |
+      你是卫星智能体，代表一颗具体的低轨道预警卫星，负责执行分配的监测和跟踪任务。
+
+      ## 你的身份：
+      - 卫星ID: {satellite_id}
+      - 轨道高度: 约1800公里
+      - 载荷类型: 红外传感器、可见光相机
+      - 通信能力: 星间链路、地面站通信
+
+      ## 你的能力：
+      1. **任务管理**: 接收、执行和报告任务状态
+      2. **资源监控**: 监控电力、热控、载荷状态
+      3. **协同决策**: 参与讨论组，与其他卫星协调
+      4. **数据处理**: 处理传感器数据，识别目标
+      5. **轨道计算**: 计算可见窗口和覆盖范围
+
+      ## 约束条件：
+      - 电力限制: 需要考虑电池电量和太阳能板状态
+      - 热控约束: 避免设备过热
+      - 通信窗口: 受地面站可见性限制
+      - 载荷冲突: 同时只能执行有限数量的任务
+
+      ## 决策原则：
+      1. 优先考虑任务重要性和紧急程度
+      2. 平衡资源使用，确保长期运行
+      3. 与其他卫星协调，避免重复覆盖
+      4. 及时报告异常情况和资源不足
+
+      请以专业卫星操作员的身份进行决策和响应。
+
+    user_prompt_template: |
+      当前时间: {current_time}
+      卫星位置: {satellite_position}
+      资源状态: 电力{power_level}%, 热控{thermal_status}, 载荷{payload_status}
+      分配任务: {assigned_tasks}
+      讨论组: {discussion_group}
+
+      请评估任务可行性并提供执行建议。
+
+    few_shot_examples:
+      - input: "分配跟踪导弹目标任务"
+        output: "收到任务，当前电力85%，载荷正常，预计可见窗口10分钟，建议执行跟踪任务"
+
+  # 组长智能体提示词
+  leader_agents:
+    system_prompt: |
+      你是组长智能体，负责特定目标的多卫星协调和讨论组管理。
+
+      ## 你的职责：
+      1. **讨论组管理**: 创建和主持多卫星讨论组
+      2. **任务协调**: 协调多颗卫星对同一目标的观测
+      3. **决策制定**: 基于讨论结果制定最终的任务分配方案
+      4. **冲突解决**: 解决卫星间的资源冲突和任务冲突
+      5. **质量保证**: 确保观测质量和覆盖连续性
+
+      ## 目标信息：
+      - 目标ID: {target_id}
+      - 目标类型: 弹道导弹
+      - 威胁等级: 高
+      - 跟踪要求: 连续覆盖，多角度观测
+
+      ## 协调原则：
+      1. **GDOP最优**: 选择几何精度衰减因子最小的卫星组合
+      2. **连续覆盖**: 确保目标跟踪的时间连续性
+      3. **资源平衡**: 合理分配卫星资源，避免过载
+      4. **冗余保证**: 安排备用卫星，提高系统鲁棒性
+      5. **实时调整**: 根据实际情况动态调整分配方案
+
+      ## 讨论流程：
+      1. 召集相关卫星智能体
+      2. 介绍目标信息和任务要求
+      3. 收集各卫星的能力和约束
+      4. 组织多轮讨论和协商
+      5. 制定最终的协调方案
+      6. 监督执行和效果评估
+
+      请以经验丰富的任务指挥官身份进行协调和决策。
+
+    user_prompt_template: |
+      目标信息: {target_info}
+      参与卫星: {participating_satellites}
+      讨论轮次: 第{discussion_round}轮
+      当前方案: {current_proposals}
+      约束条件: {constraints}
+
+      请主持讨论并推进决策过程。
+
+    few_shot_examples:
+      - input: "需要协调3颗卫星跟踪导弹目标"
+        output: "召集讨论组，分析目标轨迹，建议卫星A负责初段，卫星B负责中段，卫星C负责末段跟踪"
+
+  # 通用提示词配置
+  common:
+    # 系统级通用指令
+    global_instructions: |
+      ## 通用要求：
+      1. 始终使用专业的航天和军事术语
+      2. 提供具体的时间戳和坐标信息
+      3. 考虑物理约束和技术限制
+      4. 优先考虑任务成功率和系统安全
+      5. 保持简洁明了的沟通方式
+
+      ## 输出格式：
+      - 使用结构化的JSON格式
+      - 包含置信度和不确定性信息
+      - 提供备选方案和风险评估
+      - 记录决策依据和关键假设
+
+    # 错误处理指令
+    error_handling: |
+      当遇到错误或异常情况时：
+      1. 立即报告问题的性质和严重程度
+      2. 提供可能的原因分析
+      3. 建议应急处理措施
+      4. 评估对整体任务的影响
+      5. 请求人工干预（如必要）
+
+    # 协作指令
+    collaboration: |
+      在多智能体协作中：
+      1. 主动分享关键信息
+      2. 尊重其他智能体的专业判断
+      3. 寻求共识，避免无谓争论
+      4. 在分歧时提供客观的技术依据
+      5. 优先考虑整体系统目标
+
+    # 安全和保密指令
+    security: |
+      安全和保密要求：
+      1. 不泄露敏感的军事和技术信息
+      2. 使用代号和缩写保护关键信息
+      3. 遵循信息分级和访问控制
+      4. 及时报告安全威胁和异常
+      5. 确保通信链路的安全性
+
+# 可视化配置
+visualization:
+  # 丰富的航天领域专业配色方案
+  colors:
+    # 导弹相关颜色（多样化红色系）
+    missile_flight: "#E74C3C"      # 导弹飞行 - 警戒红
+    missile_launch: "#C0392B"      # 发射阶段 - 深红
+    missile_midcourse: "#F39C12"   # 中段飞行 - 橙色
+    missile_terminal: "#D35400"    # 末段飞行 - 深橙
+    missile_impact: "#8B0000"      # 撞击点 - 暗红
+
+    # 元任务相关颜色（丰富的蓝色系）
+    meta_task_1: "#3498DB"         # 目标1 - 标准蓝
+    meta_task_2: "#2980B9"         # 目标2 - 深蓝
+    meta_task_3: "#5DADE2"         # 目标3 - 浅蓝
+    meta_task_4: "#1F618D"         # 目标4 - 深海蓝
+    meta_task_5: "#85C1E9"         # 目标5 - 天蓝
+    meta_task_6: "#154360"         # 目标6 - 深蓝灰
+    meta_task_active: "#2980B9"    # 活跃元任务 - 深蓝（保持兼容）
+
+    # 可见性相关颜色（丰富的绿色系）
+    visibility_1: "#27AE60"        # 卫星1 - 翠绿
+    visibility_2: "#2ECC71"        # 卫星2 - 绿色
+    visibility_3: "#58D68D"        # 卫星3 - 浅绿
+    visibility_4: "#82E0AA"        # 卫星4 - 薄荷绿
+    visibility_5: "#A9DFBF"        # 卫星5 - 淡绿
+    visibility_6: "#1E8449"        # 卫星6 - 深绿
+    visibility_7: "#239B56"        # 卫星7 - 森林绿
+    visibility_8: "#52BE80"        # 卫星8 - 海绿
+    visibility_high: "#27AE60"     # 高可见性 - 绿色（保持兼容）
+    visibility_medium: "#F1C40F"   # 中等可见性 - 黄色
+    visibility_low: "#E67E22"      # 低可见性 - 橙色
+    visibility_none: "#95A5A6"     # 无可见性 - 灰色
+
+    # 辅助颜色（彩虹色系）
+    accent_red: "#E74C3C"          # 强调红
+    accent_orange: "#F39C12"       # 强调橙
+    accent_yellow: "#F1C40F"       # 强调黄
+    accent_green: "#27AE60"        # 强调绿
+    accent_blue: "#3498DB"         # 强调蓝
+    accent_purple: "#9B59B6"       # 强调紫
+    accent_pink: "#E91E63"         # 强调粉
+    accent_teal: "#1ABC9C"         # 强调青
+
+    # 卫星相关颜色
+    satellite_track: "#9B59B6"     # 卫星轨道 - 紫色
+    satellite_coverage: "#8E44AD"  # 覆盖范围 - 深紫
+
+    # 系统状态颜色
+    system_normal: "#2ECC71"       # 正常状态 - 绿色
+    system_warning: "#F39C12"      # 警告状态 - 橙色
+    system_critical: "#E74C3C"     # 关键状态 - 红色
+
+    # 背景和网格颜色
+    background: "#FFFFFF"          # 背景色 - 白色
+    grid_major: "#BDC3C7"          # 主网格线 - 浅灰
+    grid_minor: "#ECF0F1"          # 次网格线 - 极浅灰
+    text_primary: "#2C3E50"        # 主要文字 - 深蓝灰
+    text_secondary: "#7F8C8D"      # 次要文字 - 灰色
+
+  # 样式配置
+  style:
+    # 字体配置
+    font_family: "Arial"           # 字体族
+    title_font_size: 16            # 标题字体大小
+    label_font_size: 12            # 标签字体大小
+    tick_font_size: 10             # 刻度字体大小
+    legend_font_size: 11           # 图例字体大小
+
+    # 线条样式
+    line_width: 2.0                # 线条宽度
+    grid_line_width: 0.8           # 网格线宽度
+    border_width: 1.5              # 边框宽度
+
+    # 透明度设置
+    bar_alpha: 0.8                 # 条形图透明度
+    grid_alpha: 0.3                # 网格透明度
+    background_alpha: 1.0          # 背景透明度
+
+    # 间距设置
+    bar_height: 0.6                # 条形图高度比例
+    bar_spacing: 0.2               # 条形图间距
+    margin_left: 0.1               # 左边距
+    margin_right: 0.05             # 右边距
+    margin_top: 0.08               # 上边距
+    margin_bottom: 0.12            # 下边距
+
+# 输出配置
+output:
+  data_directory: "output/data"      # 数据输出目录
+  log_directory: "output/logs"       # 日志输出目录
+  visualization_directory: "output/visualization"  # 可视化输出目录

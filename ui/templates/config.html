@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+
+{% block title %}ADK开发UI - 配置管理{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-cog me-2"></i>
+                配置管理
+            </h1>
+            <button class="btn btn-primary" onclick="refreshConfig()">
+                <i class="fas fa-sync-alt me-1"></i>
+                刷新配置
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 配置概览 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-robot fa-2x text-primary mb-2"></i>
+                <h5 class="card-title">主要模型</h5>
+                <p class="card-text">
+                    <span id="primary-model">-</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-key fa-2x text-success mb-2"></i>
+                <h5 class="card-title">API密钥</h5>
+                <p class="card-text">
+                    <span id="api-key-status">-</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-comments fa-2x text-info mb-2"></i>
+                <h5 class="card-title">提示词</h5>
+                <p class="card-text">
+                    <span id="prompts-status">-</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-shield-alt fa-2x text-warning mb-2"></i>
+                <h5 class="card-title">安全配置</h5>
+                <p class="card-text">
+                    <span id="security-status">-</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 大模型配置 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-brain me-2"></i>
+                    大模型配置
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>主要配置</h6>
+                        <div id="primary-config">
+                            <div class="text-center text-muted">
+                                <i class="fas fa-spinner fa-spin"></i> 加载中...
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>智能体特定配置</h6>
+                        <div id="agent-configs">
+                            <div class="text-center text-muted">
+                                <i class="fas fa-spinner fa-spin"></i> 加载中...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>备用模型</h6>
+                        <div id="fallback-configs">
+                            <div class="text-center text-muted">
+                                <i class="fas fa-spinner fa-spin"></i> 加载中...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 提示词配置 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-comment-dots me-2"></i>
+                    智能体提示词配置
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="prompts-config">
+                    <div class="text-center text-muted">
+                        <i class="fas fa-spinner fa-spin"></i> 加载中...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 性能和安全配置 -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-tachometer-alt me-2"></i>
+                    性能配置
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="performance-config">
+                    <div class="text-center text-muted">
+                        <i class="fas fa-spinner fa-spin"></i> 加载中...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-shield-alt me-2"></i>
+                    安全配置
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="security-config">
+                    <div class="text-center text-muted">
+                        <i class="fas fa-spinner fa-spin"></i> 加载中...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .config-item {
+        padding: 8px 12px;
+        margin: 4px 0;
+        background-color: #f8f9fa;
+        border-radius: 6px;
+        border-left: 4px solid #dee2e6;
+    }
+    
+    .config-item.primary {
+        border-left-color: var(--adk-primary);
+    }
+    
+    .config-item.success {
+        border-left-color: var(--adk-secondary);
+    }
+    
+    .config-item.warning {
+        border-left-color: var(--adk-warning);
+    }
+    
+    .config-item.danger {
+        border-left-color: var(--adk-danger);
+    }
+    
+    .config-label {
+        font-weight: 600;
+        color: #495057;
+    }
+    
+    .config-value {
+        color: #6c757d;
+        font-family: 'Courier New', monospace;
+    }
+    
+    .status-badge {
+        font-size: 0.8em;
+        padding: 4px 8px;
+        border-radius: 12px;
+    }
+    
+    .status-configured {
+        background-color: #d4edda;
+        color: #155724;
+    }
+    
+    .status-missing {
+        background-color: #f8d7da;
+        color: #721c24;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 页面加载时获取配置信息
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshConfig();
+    });
+    
+    // 刷新配置信息
+    function refreshConfig() {
+        loadLLMConfig();
+        loadPromptsConfig();
+    }
+    
+    // 加载大模型配置
+    function loadLLMConfig() {
+        fetch('/api/config/llm')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showAlert('danger', '获取大模型配置失败: ' + data.error);
+                    return;
+                }
+                
+                displayLLMConfig(data);
+                updateConfigOverview(data);
+            })
+            .catch(error => {
+                console.error('获取大模型配置失败:', error);
+                showAlert('danger', '获取大模型配置失败');
+            });
+    }
+    
+    // 加载提示词配置
+    function loadPromptsConfig() {
+        fetch('/api/config/prompts')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showAlert('danger', '获取提示词配置失败: ' + data.error);
+                    return;
+                }
+                
+                displayPromptsConfig(data);
+            })
+            .catch(error => {
+                console.error('获取提示词配置失败:', error);
+                showAlert('danger', '获取提示词配置失败');
+            });
+    }
+    
+    // 显示大模型配置
+    function displayLLMConfig(data) {
+        // 主要配置
+        const primaryHtml = `
+            <div class="config-item primary">
+                <div class="config-label">提供商</div>
+                <div class="config-value">${data.primary.provider}</div>
+            </div>
+            <div class="config-item primary">
+                <div class="config-label">模型</div>
+                <div class="config-value">${data.primary.model}</div>
+            </div>
+            <div class="config-item primary">
+                <div class="config-label">最大令牌数</div>
+                <div class="config-value">${data.primary.max_tokens}</div>
+            </div>
+            <div class="config-item primary">
+                <div class="config-label">温度参数</div>
+                <div class="config-value">${data.primary.temperature}</div>
+            </div>
+            <div class="config-item ${data.primary.api_key_configured ? 'success' : 'danger'}">
+                <div class="config-label">API密钥</div>
+                <div class="config-value">
+                    <span class="status-badge ${data.primary.api_key_configured ? 'status-configured' : 'status-missing'}">
+                        ${data.primary.api_key_configured ? '已配置' : '未配置'}
+                    </span>
+                </div>
+            </div>
+        `;
+        document.getElementById('primary-config').innerHTML = primaryHtml;
+        
+        // 智能体特定配置
+        let agentHtml = '';
+        for (const [agentType, config] of Object.entries(data.agent_specific)) {
+            agentHtml += `
+                <div class="config-item success">
+                    <div class="config-label">${agentType}</div>
+                    <div class="config-value">${config.provider}/${config.model}</div>
+                </div>
+            `;
+        }
+        document.getElementById('agent-configs').innerHTML = agentHtml;
+        
+        // 备用配置
+        let fallbackHtml = '';
+        if (data.fallback.length === 0) {
+            fallbackHtml = '<div class="text-muted">无备用模型配置</div>';
+        } else {
+            data.fallback.forEach(config => {
+                fallbackHtml += `
+                    <div class="config-item ${config.api_key_configured ? 'success' : 'warning'}">
+                        <div class="config-label">${config.provider}/${config.model}</div>
+                        <div class="config-value">
+                            <span class="status-badge ${config.api_key_configured ? 'status-configured' : 'status-missing'}">
+                                ${config.api_key_configured ? '已配置' : '未配置'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        document.getElementById('fallback-configs').innerHTML = fallbackHtml;
+        
+        // 性能配置
+        const performanceHtml = `
+            <div class="config-item">
+                <div class="config-label">并发请求数</div>
+                <div class="config-value">${data.performance.concurrent_requests || 'N/A'}</div>
+            </div>
+            <div class="config-item">
+                <div class="config-label">速率限制</div>
+                <div class="config-value">${data.performance.rate_limit_per_minute || 'N/A'}/分钟</div>
+            </div>
+            <div class="config-item">
+                <div class="config-label">缓存启用</div>
+                <div class="config-value">${data.performance.cache_enabled ? '是' : '否'}</div>
+            </div>
+            <div class="config-item">
+                <div class="config-label">缓存TTL</div>
+                <div class="config-value">${data.performance.cache_ttl || 'N/A'}秒</div>
+            </div>
+        `;
+        document.getElementById('performance-config').innerHTML = performanceHtml;
+        
+        // 安全配置
+        const securityHtml = `
+            <div class="config-item">
+                <div class="config-label">内容过滤</div>
+                <div class="config-value">${data.security.content_filter ? '启用' : '禁用'}</div>
+            </div>
+            <div class="config-item">
+                <div class="config-label">PII检测</div>
+                <div class="config-value">${data.security.pii_detection ? '启用' : '禁用'}</div>
+            </div>
+            <div class="config-item">
+                <div class="config-label">安全设置</div>
+                <div class="config-value">${Object.keys(data.security.safety_settings || {}).length}项</div>
+            </div>
+        `;
+        document.getElementById('security-config').innerHTML = securityHtml;
+    }
+    
+    // 显示提示词配置
+    function displayPromptsConfig(data) {
+        let promptsHtml = '';
+        
+        for (const [agentType, config] of Object.entries(data.agent_prompts)) {
+            promptsHtml += `
+                <div class="config-item primary">
+                    <div class="config-label">${agentType}</div>
+                    <div class="config-value">
+                        系统提示词: ${config.system_prompt_length}字符 | 
+                        用户模板: ${config.user_template_length}字符 | 
+                        示例: ${config.examples_count}个
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 通用指令
+        const common = data.common_instructions;
+        promptsHtml += `
+            <div class="mt-3">
+                <h6>通用指令</h6>
+                <div class="config-item success">
+                    <div class="config-label">全局指令</div>
+                    <div class="config-value">${common.global_instructions_length}字符</div>
+                </div>
+                <div class="config-item success">
+                    <div class="config-label">错误处理</div>
+                    <div class="config-value">${common.error_handling_length}字符</div>
+                </div>
+                <div class="config-item success">
+                    <div class="config-label">协作指令</div>
+                    <div class="config-value">${common.collaboration_length}字符</div>
+                </div>
+                <div class="config-item success">
+                    <div class="config-label">安全指令</div>
+                    <div class="config-value">${common.security_length}字符</div>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('prompts-config').innerHTML = promptsHtml;
+    }
+    
+    // 更新配置概览
+    function updateConfigOverview(data) {
+        // 主要模型
+        document.getElementById('primary-model').textContent = 
+            `${data.primary.provider}/${data.primary.model}`;
+        
+        // API密钥状态
+        const configuredCount = [data.primary, ...data.fallback]
+            .filter(config => config.api_key_configured).length;
+        const totalCount = 1 + data.fallback.length;
+        document.getElementById('api-key-status').textContent = 
+            `${configuredCount}/${totalCount} 已配置`;
+        
+        // 提示词状态
+        document.getElementById('prompts-status').textContent = '3个智能体';
+        
+        // 安全配置状态
+        const securityEnabled = data.security.content_filter && data.security.pii_detection;
+        document.getElementById('security-status').textContent = 
+            securityEnabled ? '已启用' : '部分启用';
+    }
+</script>
+{% endblock %}

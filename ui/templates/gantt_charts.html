@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+
+{% block title %}甘特图展示 - ADK开发UI{% endblock %}
+
+{% block content %}
+<div class="adk-page-header">
+    <h1 class="adk-page-title">
+        <span class="material-icons">timeline</span>
+        甘特图展示
+    </h1>
+    <p class="adk-page-description">航天任务规划调度甘特图可视化</p>
+</div>
+
+<!-- 甘特图控制面板 -->
+<div class="adk-card" style="margin-bottom: 24px;">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons">settings</span>
+            甘特图控制
+        </h2>
+    </div>
+    <div class="adk-card-content">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div>
+                <label class="adk-form-label">图表类型</label>
+                <select id="chart-type" class="adk-form-input">
+                    <option value="meta_task">元任务甘特图</option>
+                    <option value="planning">规划调度甘特图</option>
+                </select>
+            </div>
+            <div>
+                <label class="adk-form-label">仿真会话</label>
+                <select id="session-select" class="adk-form-input">
+                    <option value="">选择会话...</option>
+                </select>
+            </div>
+            <div>
+                <label class="adk-form-label">甘特图文件</label>
+                <select id="gantt-file" class="adk-form-input">
+                    <option value="">选择甘特图...</option>
+                </select>
+            </div>
+            <div style="display: flex; align-items: end; gap: 8px;">
+                <button id="load-gantt" class="adk-btn adk-btn-primary">
+                    <span class="material-icons">refresh</span>
+                    加载甘特图
+                </button>
+                <button id="export-gantt" class="adk-btn adk-btn-secondary">
+                    <span class="material-icons">download</span>
+                    导出
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 甘特图显示区域 -->
+<div class="adk-card">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons">timeline</span>
+            甘特图显示
+        </h2>
+        <div style="display: flex; gap: 8px;">
+            <button id="zoom-in" class="adk-btn adk-btn-secondary" title="放大">
+                <span class="material-icons">zoom_in</span>
+            </button>
+            <button id="zoom-out" class="adk-btn adk-btn-secondary" title="缩小">
+                <span class="material-icons">zoom_out</span>
+            </button>
+            <button id="reset-zoom" class="adk-btn adk-btn-secondary" title="重置缩放">
+                <span class="material-icons">center_focus_strong</span>
+            </button>
+        </div>
+    </div>
+    <div class="adk-card-content">
+        <div id="gantt-container" style="width: 100%; height: 600px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <div id="gantt-placeholder" style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">
+                <div style="text-align: center;">
+                    <span class="material-icons" style="font-size: 48px; margin-bottom: 16px; display: block;">timeline</span>
+                    <p>请选择仿真会话和甘特图文件</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 甘特图信息面板 -->
+<div class="adk-card" style="margin-top: 24px;">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons">info</span>
+            甘特图信息
+        </h2>
+    </div>
+    <div class="adk-card-content">
+        <div id="gantt-info" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div class="adk-stat-card">
+                <div class="adk-stat-label">总任务数</div>
+                <div class="adk-stat-value" id="total-tasks">-</div>
+            </div>
+            <div class="adk-stat-card">
+                <div class="adk-stat-label">时间跨度</div>
+                <div class="adk-stat-value" id="time-span">-</div>
+            </div>
+            <div class="adk-stat-card">
+                <div class="adk-stat-label">资源数量</div>
+                <div class="adk-stat-value" id="resource-count">-</div>
+            </div>
+            <div class="adk-stat-card">
+                <div class="adk-stat-label">会话ID</div>
+                <div class="adk-stat-value" id="session-id">-</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .adk-stat-card {
+        background: #f8f9fa;
+        padding: 16px;
+        border-radius: 8px;
+        text-align: center;
+    }
+    
+    .adk-stat-label {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .adk-stat-value {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--adk-primary);
+    }
+    
+    #gantt-container {
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .gantt-loading {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<script>
+    let currentGanttData = null;
+    let currentPlot = null;
+
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSessions();
+        
+        // 绑定事件
+        document.getElementById('session-select').addEventListener('change', loadGanttFiles);
+        document.getElementById('load-gantt').addEventListener('click', loadGanttChart);
+        document.getElementById('export-gantt').addEventListener('click', exportGanttChart);
+        document.getElementById('zoom-in').addEventListener('click', () => zoomChart(1.2));
+        document.getElementById('zoom-out').addEventListener('click', () => zoomChart(0.8));
+        document.getElementById('reset-zoom').addEventListener('click', resetZoom);
+    });
+
+    // 加载仿真会话列表
+    async function loadSessions() {
+        try {
+            const response = await fetch('/api/simulation/sessions');
+            const data = await response.json();
+            
+            const sessionSelect = document.getElementById('session-select');
+            sessionSelect.innerHTML = '<option value="">选择会话...</option>';
+            
+            if (data.sessions) {
+                data.sessions.forEach(session => {
+                    const option = document.createElement('option');
+                    option.value = session.session_id;
+                    option.textContent = `${session.session_name} (${session.session_id})`;
+                    sessionSelect.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('加载会话列表失败:', error);
+        }
+    }
+
+    // 加载甘特图文件列表
+    async function loadGanttFiles() {
+        const sessionId = document.getElementById('session-select').value;
+        const chartType = document.getElementById('chart-type').value;
+        
+        if (!sessionId) return;
+        
+        try {
+            const response = await fetch(`/api/simulation/sessions/${sessionId}/gantt_files?type=${chartType}`);
+            const data = await response.json();
+            
+            const ganttFileSelect = document.getElementById('gantt-file');
+            ganttFileSelect.innerHTML = '<option value="">选择甘特图...</option>';
+            
+            if (data.files) {
+                data.files.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file.filename;
+                    option.textContent = file.display_name;
+                    ganttFileSelect.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('加载甘特图文件失败:', error);
+        }
+    }
+
+    // 加载甘特图
+    async function loadGanttChart() {
+        const sessionId = document.getElementById('session-select').value;
+        const filename = document.getElementById('gantt-file').value;
+        
+        if (!sessionId || !filename) {
+            alert('请选择会话和甘特图文件');
+            return;
+        }
+        
+        showLoading();
+        
+        try {
+            const response = await fetch(`/api/simulation/sessions/${sessionId}/gantt_data/${filename}`);
+            const ganttData = await response.json();
+            
+            currentGanttData = ganttData;
+            renderGanttChart(ganttData);
+            updateGanttInfo(ganttData);
+            
+        } catch (error) {
+            console.error('加载甘特图失败:', error);
+            alert('加载甘特图失败: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // 渲染甘特图
+    function renderGanttChart(ganttData) {
+        const container = document.getElementById('gantt-container');
+        const placeholder = document.getElementById('gantt-placeholder');
+        
+        if (placeholder) {
+            placeholder.style.display = 'none';
+        }
+        
+        // 准备Plotly数据
+        const traces = [];
+        const colors = {
+            'meta_task': '#1f77b4',
+            'observation': '#2E8B57',
+            'communication': '#4169E1',
+            'data_transmission': '#FF6347',
+            'maintenance': '#9370DB',
+            'maneuver': '#FF8C00'
+        };
+        
+        if (ganttData.tasks) {
+            ganttData.tasks.forEach(task => {
+                traces.push({
+                    x: [task.start, task.end],
+                    y: [task.category, task.category],
+                    mode: 'lines',
+                    line: {
+                        color: colors[task.type] || '#1f77b4',
+                        width: 20
+                    },
+                    name: task.name,
+                    hovertemplate: `<b>${task.name}</b><br>` +
+                                  `类型: ${task.type}<br>` +
+                                  `开始: ${task.start}<br>` +
+                                  `结束: ${task.end}<br>` +
+                                  `描述: ${task.description}<extra></extra>`
+                });
+            });
+        }
+        
+        const layout = {
+            title: ganttData.title || '甘特图',
+            xaxis: {
+                title: '时间',
+                type: 'date'
+            },
+            yaxis: {
+                title: ganttData.y_axis?.label || '资源',
+                categoryorder: 'category ascending'
+            },
+            showlegend: true,
+            height: 600,
+            margin: { l: 100, r: 50, t: 80, b: 50 }
+        };
+        
+        const config = {
+            responsive: true,
+            displayModeBar: true,
+            modeBarButtonsToAdd: ['pan2d', 'select2d', 'lasso2d']
+        };
+        
+        Plotly.newPlot(container, traces, layout, config);
+        currentPlot = container;
+    }
+
+    // 更新甘特图信息
+    function updateGanttInfo(ganttData) {
+        document.getElementById('total-tasks').textContent = ganttData.tasks?.length || 0;
+        document.getElementById('resource-count').textContent = 
+            new Set(ganttData.tasks?.map(t => t.category) || []).size;
+        document.getElementById('session-id').textContent = 
+            ganttData.metadata?.session_id || '-';
+        
+        // 计算时间跨度
+        if (ganttData.tasks && ganttData.tasks.length > 0) {
+            const startTimes = ganttData.tasks.map(t => new Date(t.start));
+            const endTimes = ganttData.tasks.map(t => new Date(t.end));
+            const minStart = new Date(Math.min(...startTimes));
+            const maxEnd = new Date(Math.max(...endTimes));
+            const spanMinutes = Math.round((maxEnd - minStart) / (1000 * 60));
+            document.getElementById('time-span').textContent = `${spanMinutes} 分钟`;
+        } else {
+            document.getElementById('time-span').textContent = '-';
+        }
+    }
+
+    // 缩放控制
+    function zoomChart(factor) {
+        if (currentPlot) {
+            Plotly.relayout(currentPlot, {
+                'xaxis.range[0]': null,
+                'xaxis.range[1]': null
+            });
+        }
+    }
+
+    function resetZoom() {
+        if (currentPlot) {
+            Plotly.relayout(currentPlot, {
+                'xaxis.autorange': true,
+                'yaxis.autorange': true
+            });
+        }
+    }
+
+    // 导出甘特图
+    function exportGanttChart() {
+        if (!currentPlot) {
+            alert('请先加载甘特图');
+            return;
+        }
+        
+        Plotly.downloadImage(currentPlot, {
+            format: 'png',
+            width: 1200,
+            height: 800,
+            filename: 'gantt_chart'
+        });
+    }
+
+    // 显示/隐藏加载状态
+    function showLoading() {
+        const container = document.getElementById('gantt-container');
+        const loading = document.createElement('div');
+        loading.className = 'gantt-loading';
+        loading.innerHTML = '<div class="adk-spinner"></div>';
+        container.appendChild(loading);
+    }
+
+    function hideLoading() {
+        const loading = document.querySelector('.gantt-loading');
+        if (loading) {
+            loading.remove();
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,39 @@
+MIT License
+
+Copyright (c) 2025 现实预警星座多智能体系统开发团队
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+现实预警星座多智能体滚动任务规划系统 v2.0.0
+基于Google ADK框架的分布式多智能体协同系统
+
+本软件专门用于天基低轨预警系统的多星多任务规划，
+采用无中心节点的分布式架构，通过智能体间的协同决策
+实现对导弹目标的最优滚动任务规划。
+
+核心特性：
+- 基于Google ADK框架的真实智能体架构
+- Walker星座到ADK智能体一对一映射
+- 基于距离优势的导弹目标智能分发
+- ADK官方讨论组协作模式
+- 滚动任务规划周期管理
+- 分层甘特图可视化系统
+- 专业UI监控界面

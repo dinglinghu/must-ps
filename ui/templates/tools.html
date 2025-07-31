@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+
+{% block title %}ADK Development UI - Tools{% endblock %}
+
+{% block content %}
+<!-- ADK Tools Header -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
+    <div>
+        <h1 style="font-size: 28px; font-weight: 400; margin: 0 0 8px 0; color: var(--adk-on-surface);">
+            Tools & Functions
+        </h1>
+        <p style="color: var(--adk-on-surface-variant); margin: 0; font-size: 16px;">
+            Manage and monitor ADK tools available to your agents
+        </p>
+    </div>
+    <button class="adk-btn adk-btn-primary" onclick="refreshTools()">
+        <span class="material-icons">refresh</span>
+        Refresh
+    </button>
+</div>
+
+<!-- ADK Tool Categories -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-bottom: 32px;">
+    <!-- System Tools -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-primary);">build</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">System Tools</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="system-tools-count">0</div>
+        </div>
+    </div>
+    
+    <!-- Function Tools -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-secondary);">functions</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">Function Tools</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="function-tools-count">0</div>
+        </div>
+    </div>
+    
+    <!-- Custom Tools -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-warning);">extension</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">Custom Tools</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="custom-tools-count">0</div>
+        </div>
+    </div>
+</div>
+
+<!-- ADK Tools List -->
+<div class="adk-card">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">inventory</span>
+            Available Tools
+        </h2>
+    </div>
+    <div class="adk-card-content">
+        <div id="tools-container" class="adk-tools-grid">
+            <div class="adk-loading-state">
+                <span class="material-icons adk-loading-spinner">refresh</span>
+                <span>Loading tools...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ADK Tool Details Modal -->
+<div id="toolModal" class="adk-modal" style="display: none;">
+    <div class="adk-modal-backdrop" onclick="closeToolModal()"></div>
+    <div class="adk-modal-content">
+        <div class="adk-modal-header">
+            <h2 class="adk-modal-title">
+                <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">build</span>
+                Tool Details
+            </h2>
+            <button class="adk-modal-close" onclick="closeToolModal()">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="adk-modal-body">
+            <div id="tool-details-content">
+                <!-- Tool details content will be populated here -->
+            </div>
+        </div>
+        <div class="adk-modal-footer">
+            <button class="adk-btn adk-btn-secondary" onclick="closeToolModal()">
+                Close
+            </button>
+            <button class="adk-btn adk-btn-primary" onclick="testTool()">
+                <span class="material-icons">play_arrow</span>
+                Test Tool
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ADK Tools Grid */
+    .adk-tools-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 20px;
+    }
+    
+    /* ADK Tool Card */
+    .adk-tool-card {
+        background: var(--adk-surface);
+        border: 1px solid var(--adk-outline-variant);
+        border-radius: 12px;
+        padding: 20px;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+        position: relative;
+    }
+    
+    .adk-tool-card:hover {
+        box-shadow: var(--adk-elevation-2);
+        transform: translateY(-2px);
+        border-color: var(--adk-primary);
+    }
+    
+    .adk-tool-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+    
+    .adk-tool-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 20px;
+        flex-shrink: 0;
+    }
+    
+    .adk-tool-icon.system {
+        background: linear-gradient(135deg, var(--adk-primary), #1557b0);
+    }
+    
+    .adk-tool-icon.function {
+        background: linear-gradient(135deg, var(--adk-secondary), #2d7d32);
+    }
+    
+    .adk-tool-icon.custom {
+        background: linear-gradient(135deg, var(--adk-warning), #e8710a);
+    }
+    
+    .adk-tool-name {
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--adk-on-surface);
+        margin: 0;
+    }
+    
+    .adk-tool-description {
+        font-size: 14px;
+        color: var(--adk-on-surface-variant);
+        line-height: 1.4;
+        margin-bottom: 16px;
+    }
+    
+    .adk-tool-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        color: var(--adk-on-surface-variant);
+    }
+    
+    .adk-tool-type {
+        background: rgba(26, 115, 232, 0.12);
+        color: var(--adk-primary);
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    /* Tool Parameters Display */
+    .adk-tool-params {
+        margin-top: 16px;
+    }
+    
+    .adk-param-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--adk-outline-variant);
+    }
+    
+    .adk-param-item:last-child {
+        border-bottom: none;
+    }
+    
+    .adk-param-name {
+        font-weight: 500;
+        color: var(--adk-on-surface);
+        font-size: 14px;
+    }
+    
+    .adk-param-type {
+        font-size: 12px;
+        color: var(--adk-on-surface-variant);
+        background: var(--adk-background);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'Roboto Mono', monospace;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ADK Tools Management - Official Implementation
+    let currentToolId = null;
+    
+    // Mock tools data (replace with actual API call)
+    const mockTools = [
+        {
+            id: 'stk_scenario_manager',
+            name: 'STK Scenario Manager',
+            type: 'system',
+            description: 'Manages STK simulation scenarios and satellite configurations',
+            parameters: ['scenario_path', 'satellite_list', 'time_range'],
+            category: 'System Tools'
+        },
+        {
+            id: 'task_scheduler',
+            name: 'Task Scheduler',
+            type: 'function',
+            description: 'Schedules and manages multi-agent tasks and coordination',
+            parameters: ['task_list', 'priority', 'deadline'],
+            category: 'Function Tools'
+        },
+        {
+            id: 'gantt_generator',
+            name: 'Gantt Chart Generator',
+            type: 'custom',
+            description: 'Generates Gantt charts for task visualization and planning',
+            parameters: ['tasks', 'timeline', 'format'],
+            category: 'Custom Tools'
+        },
+        {
+            id: 'gdop_calculator',
+            name: 'GDOP Calculator',
+            type: 'function',
+            description: 'Calculates Geometric Dilution of Precision for satellite positioning',
+            parameters: ['satellite_positions', 'target_location'],
+            category: 'Function Tools'
+        }
+    ];
+    
+    // Initialize tools page
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshTools();
+        console.log('ADK Tools page initialized');
+    });
+    
+    // Refresh tools list
+    function refreshTools() {
+        showLoadingState();
+        
+        // Simulate API call with mock data
+        setTimeout(() => {
+            displayTools(mockTools);
+            updateToolCounts(mockTools);
+        }, 1000);
+    }
+    
+    // Show loading state
+    function showLoadingState() {
+        const container = document.getElementById('tools-container');
+        container.innerHTML = `
+            <div class="adk-loading-state">
+                <span class="material-icons adk-loading-spinner">refresh</span>
+                <span>Loading tools...</span>
+            </div>
+        `;
+    }
+    
+    // Display tools in ADK style
+    function displayTools(tools) {
+        const container = document.getElementById('tools-container');
+        
+        if (tools.length === 0) {
+            container.innerHTML = `
+                <div class="adk-loading-state">
+                    <span class="material-icons">info</span>
+                    <span>No tools available</span>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '';
+        
+        tools.forEach(tool => {
+            const toolTypeClass = getToolTypeClass(tool.type);
+            const iconName = getToolIcon(tool.type);
+            
+            html += `
+                <div class="adk-tool-card" onclick="showToolDetails('${tool.id}')">
+                    <div class="adk-tool-header">
+                        <div class="adk-tool-icon ${toolTypeClass}">
+                            <span class="material-icons">${iconName}</span>
+                        </div>
+                        <h3 class="adk-tool-name">${tool.name}</h3>
+                    </div>
+                    <div class="adk-tool-description">
+                        ${tool.description}
+                    </div>
+                    <div class="adk-tool-footer">
+                        <span class="adk-tool-type">${tool.type}</span>
+                        <span>${tool.parameters.length} parameters</span>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+    }
+    
+    // Update tool counts
+    function updateToolCounts(tools) {
+        const systemCount = tools.filter(t => t.type === 'system').length;
+        const functionCount = tools.filter(t => t.type === 'function').length;
+        const customCount = tools.filter(t => t.type === 'custom').length;
+        
+        document.getElementById('system-tools-count').textContent = systemCount;
+        document.getElementById('function-tools-count').textContent = functionCount;
+        document.getElementById('custom-tools-count').textContent = customCount;
+    }
+    
+    // Get tool type class
+    function getToolTypeClass(type) {
+        switch (type) {
+            case 'system': return 'system';
+            case 'function': return 'function';
+            case 'custom': return 'custom';
+            default: return 'system';
+        }
+    }
+    
+    // Get tool icon
+    function getToolIcon(type) {
+        switch (type) {
+            case 'system': return 'build';
+            case 'function': return 'functions';
+            case 'custom': return 'extension';
+            default: return 'build';
+        }
+    }
+    
+    // Show tool details
+    function showToolDetails(toolId) {
+        currentToolId = toolId;
+        const tool = mockTools.find(t => t.id === toolId);
+        
+        if (!tool) {
+            showNotification('error', 'Error', 'Tool not found');
+            return;
+        }
+        
+        const content = document.getElementById('tool-details-content');
+        content.innerHTML = `
+            <div style="margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+                    <div class="adk-tool-icon ${getToolTypeClass(tool.type)}">
+                        <span class="material-icons">${getToolIcon(tool.type)}</span>
+                    </div>
+                    <div>
+                        <h3 style="font-size: 20px; font-weight: 500; margin: 0; color: var(--adk-on-surface);">
+                            ${tool.name}
+                        </h3>
+                        <p style="color: var(--adk-on-surface-variant); margin: 4px 0 0 0;">
+                            ${tool.category}
+                        </p>
+                    </div>
+                </div>
+                <p style="color: var(--adk-on-surface-variant); line-height: 1.5; margin: 0;">
+                    ${tool.description}
+                </p>
+            </div>
+            
+            <div class="adk-tool-params">
+                <h4 style="font-size: 16px; font-weight: 500; margin-bottom: 12px; color: var(--adk-on-surface);">
+                    Parameters
+                </h4>
+                ${tool.parameters.map(param => `
+                    <div class="adk-param-item">
+                        <span class="adk-param-name">${param}</span>
+                        <span class="adk-param-type">string</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        
+        showModal('toolModal');
+    }
+    
+    // Test tool
+    function testTool() {
+        if (!currentToolId) return;
+        
+        showNotification('info', 'Test Tool', `Testing tool: ${currentToolId}`);
+        // TODO: Implement tool testing logic
+    }
+    
+    // Modal management
+    function showModal(modalId) {
+        const modal = document.getElementById(modalId);
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+    
+    function closeToolModal() {
+        const modal = document.getElementById('toolModal');
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+    
+    // Close modal on escape key
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeToolModal();
+        }
+    });
+</script>
+{% endblock %}

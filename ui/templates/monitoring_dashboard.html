@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADK多智能体系统监控台</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 1.8rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .header .subtitle {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            margin-top: 0.25rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #ecf0f1;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-running { background: #27ae60; }
+        .status-stopped { background: #e74c3c; }
+        .status-warning { background: #f39c12; }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin: 0.5rem 0;
+        }
+
+        .metric-label {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .control-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .agent-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            border-left: 4px solid #3498db;
+        }
+
+        .agent-id {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+
+        .agent-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: #7f8c8d;
+        }
+
+        .discussion-group {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid #9b59b6;
+        }
+
+        .group-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .group-id {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .group-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: #d5f4e6;
+            color: #27ae60;
+        }
+
+        .status-completed {
+            background: #dbeafe;
+            color: #3498db;
+        }
+
+        .participants {
+            margin-top: 0.5rem;
+        }
+
+        .participant-tag {
+            display: inline-block;
+            background: #ecf0f1;
+            color: #2c3e50;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-right: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .leader-tag {
+            background: #f39c12;
+            color: white;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 1rem;
+        }
+
+        .last-update {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 0.8rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #ecf0f1;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .control-buttons {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>
+            🛰️ ADK多智能体系统监控台
+            <span class="status-indicator" id="connection-status"></span>
+        </h1>
+        <div class="subtitle">基于Google ADK框架的航天预警星座导弹目标跟踪系统</div>
+    </div>
+
+    <div class="container">
+        <!-- 控制面板 -->
+        <div class="control-panel">
+            <h3>系统控制</h3>
+            <div class="control-buttons">
+                <button class="btn btn-success" onclick="startMonitoring()">
+                    ▶️ 开始监控
+                </button>
+                <button class="btn btn-danger" onclick="stopMonitoring()">
+                    ⏹️ 停止监控
+                </button>
+                <button class="btn btn-primary" onclick="requestUpdate()">
+                    🔄 刷新数据
+                </button>
+                <a href="/agents" class="btn btn-primary">
+                    👥 智能体详情
+                </a>
+                <a href="/discussion_groups" class="btn btn-primary">
+                    💬 讨论组详情
+                </a>
+                <a href="/planning_cycles" class="btn btn-primary">
+                    📊 规划周期详情
+                </a>
+            </div>
+        </div>
+
+        <!-- 仪表板网格 -->
+        <div class="dashboard-grid">
+            <!-- 系统状态卡片 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        🖥️ 系统状态
+                    </div>
+                    <span class="status-indicator" id="system-status-indicator"></span>
+                </div>
+                <div id="system-status-content">
+                    <div class="metric-label">系统运行状态</div>
+                    <div class="metric-value" id="system-running-status">未知</div>
+                    <div class="metric-label">当前仿真ID</div>
+                    <div style="font-size: 1rem; color: #7f8c8d;" id="simulation-id">无</div>
+                </div>
+            </div>
+
+            <!-- 智能体状态卡片 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        🤖 智能体状态
+                    </div>
+                </div>
+                <div id="agents-status-content">
+                    <div class="metric-label">总智能体数</div>
+                    <div class="metric-value" id="total-agents">0</div>
+                    <div class="metric-label">活跃智能体数</div>
+                    <div class="metric-value" id="active-agents">0</div>
+                </div>
+            </div>
+
+            <!-- 讨论组状态卡片 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        💬 讨论组状态
+                    </div>
+                </div>
+                <div id="discussion-groups-content">
+                    <div class="metric-label">活跃讨论组</div>
+                    <div class="metric-value" id="active-groups">0</div>
+                    <div class="metric-label">已完成讨论组</div>
+                    <div class="metric-value" id="completed-groups">0</div>
+                </div>
+            </div>
+
+            <!-- 规划周期状态卡片 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        📊 规划周期状态
+                    </div>
+                </div>
+                <div id="planning-cycles-content">
+                    <div class="metric-label">总周期数</div>
+                    <div class="metric-value" id="total-cycles">0</div>
+                    <div class="metric-label">当前周期</div>
+                    <div style="font-size: 1rem; color: #7f8c8d;" id="current-cycle">无</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 详细信息区域 -->
+        <div class="dashboard-grid">
+            <!-- 智能体列表 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">🛰️ 卫星智能体</div>
+                </div>
+                <div id="agents-list" class="agents-grid">
+                    <!-- 智能体列表将在这里动态生成 -->
+                </div>
+            </div>
+
+            <!-- 讨论组列表 -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">💬 活跃讨论组</div>
+                </div>
+                <div id="discussion-groups-list">
+                    <!-- 讨论组列表将在这里动态生成 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 性能图表 -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">📈 系统性能指标</div>
+            </div>
+            <div class="chart-container">
+                <canvas id="performance-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="last-update" id="last-update">
+            最后更新: 等待数据...
+        </div>
+    </div>
+
+    <script>
+        // Socket.IO连接
+        const socket = io();
+        let performanceChart = null;
+
+        // 连接状态管理
+        socket.on('connect', function() {
+            console.log('Connected to ADK Monitoring UI');
+            document.getElementById('connection-status').className = 'status-indicator status-running';
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Disconnected from ADK Monitoring UI');
+            document.getElementById('connection-status').className = 'status-indicator status-stopped';
+        });
+
+        // 数据更新处理
+        socket.on('system_status_update', updateSystemStatus);
+        socket.on('agents_status_update', updateAgentsStatus);
+        socket.on('discussion_groups_update', updateDiscussionGroups);
+        socket.on('planning_cycles_update', updatePlanningCycles);
+        socket.on('performance_metrics_update', updatePerformanceMetrics);
+
+        // 控制函数
+        function startMonitoring() {
+            socket.emit('start_monitoring');
+        }
+
+        function stopMonitoring() {
+            socket.emit('stop_monitoring');
+        }
+
+        function requestUpdate() {
+            socket.emit('request_update');
+        }
+
+        // 更新系统状态
+        function updateSystemStatus(data) {
+            const indicator = document.getElementById('system-status-indicator');
+            const runningStatus = document.getElementById('system-running-status');
+            const simulationId = document.getElementById('simulation-id');
+
+            if (data.is_running) {
+                indicator.className = 'status-indicator status-running';
+                runningStatus.textContent = '运行中';
+                runningStatus.style.color = '#27ae60';
+            } else {
+                indicator.className = 'status-indicator status-stopped';
+                runningStatus.textContent = '已停止';
+                runningStatus.style.color = '#e74c3c';
+            }
+
+            simulationId.textContent = data.current_simulation_id || '无';
+            updateLastUpdateTime();
+        }
+
+        // 更新智能体状态
+        function updateAgentsStatus(data) {
+            document.getElementById('total-agents').textContent = data.total_count || 0;
+            document.getElementById('active-agents').textContent = data.active_count || 0;
+
+            const agentsList = document.getElementById('agents-list');
+            agentsList.innerHTML = '';
+
+            if (data.agents) {
+                Object.values(data.agents).forEach(agent => {
+                    const agentCard = document.createElement('div');
+                    agentCard.className = 'agent-card';
+                    agentCard.innerHTML = `
+                        <div class="agent-id">${agent.satellite_id}</div>
+                        <div class="agent-status">
+                            <span class="status-indicator status-${agent.status === 'active' ? 'running' : 'stopped'}"></span>
+                            ${agent.status}
+                        </div>
+                        <div style="font-size: 0.8rem; color: #7f8c8d; margin-top: 0.5rem;">
+                            电力: ${(agent.resource_status.power_level * 100).toFixed(1)}%<br>
+                            载荷: ${agent.resource_status.payload_status}<br>
+                            任务数: ${agent.task_count}
+                        </div>
+                    `;
+                    agentsList.appendChild(agentCard);
+                });
+            }
+        }
+
+        // 更新讨论组状态
+        function updateDiscussionGroups(data) {
+            document.getElementById('active-groups').textContent = data.active_count || 0;
+            document.getElementById('completed-groups').textContent = data.completed_count || 0;
+
+            const groupsList = document.getElementById('discussion-groups-list');
+            groupsList.innerHTML = '';
+
+            if (data.groups) {
+                Object.values(data.groups).forEach(group => {
+                    const groupDiv = document.createElement('div');
+                    groupDiv.className = 'discussion-group';
+                    groupDiv.innerHTML = `
+                        <div class="group-header">
+                            <div class="group-id">${group.task_id}</div>
+                            <div class="group-status status-${group.status}">${group.status}</div>
+                        </div>
+                        <div style="font-size: 0.9rem; color: #7f8c8d;">
+                            组长: <span class="participant-tag leader-tag">${group.leader_satellite}</span>
+                        </div>
+                        <div class="participants">
+                            组员: ${group.member_satellites.map(sat => 
+                                `<span class="participant-tag">${sat}</span>`
+                            ).join('')}
+                        </div>
+                    `;
+                    groupsList.appendChild(groupDiv);
+                });
+            }
+
+            if (Object.keys(data.groups || {}).length === 0) {
+                groupsList.innerHTML = '<div style="text-align: center; color: #7f8c8d; padding: 2rem;">暂无活跃讨论组</div>';
+            }
+        }
+
+        // 更新规划周期状态
+        function updatePlanningCycles(data) {
+            document.getElementById('total-cycles').textContent = data.total_count || 0;
+            document.getElementById('current-cycle').textContent = data.current_cycle_id || '无';
+        }
+
+        // 更新性能指标
+        function updatePerformanceMetrics(data) {
+            if (!performanceChart) {
+                initPerformanceChart();
+            }
+            // 这里可以添加性能图表更新逻辑
+        }
+
+        // 初始化性能图表
+        function initPerformanceChart() {
+            const ctx = document.getElementById('performance-chart').getContext('2d');
+            performanceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '规划周期成功率',
+                        data: [],
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1
+                        }
+                    }
+                }
+            });
+        }
+
+        // 更新最后更新时间
+        function updateLastUpdateTime() {
+            const now = new Date();
+            document.getElementById('last-update').textContent = 
+                `最后更新: ${now.toLocaleString()}`;
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initPerformanceChart();
+            requestUpdate();
+        });
+    </script>
+</body>
+</html>

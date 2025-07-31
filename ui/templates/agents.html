@@ -1,0 +1,944 @@
+{% extends "base.html" %}
+
+{% block title %}ADK Development UI - Agents{% endblock %}
+
+{% block content %}
+<!-- ADK Agents Header -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
+    <div>
+        <h1 style="font-size: 28px; font-weight: 400; margin: 0 0 8px 0; color: var(--adk-on-surface);">
+            Agent Management
+        </h1>
+        <p style="color: var(--adk-on-surface-variant); margin: 0; font-size: 16px;">
+            Monitor and manage ADK agents in your multi-agent system
+        </p>
+    </div>
+    <button class="adk-btn adk-btn-primary" onclick="refreshAgents()">
+        <span class="material-icons">refresh</span>
+        Refresh
+    </button>
+</div>
+
+<!-- ADK Agent Type Statistics -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; margin-bottom: 32px;">
+    <!-- Scheduler Agents -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-primary);">psychology</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">Scheduler Agents</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="scheduler-count">0</div>
+        </div>
+    </div>
+
+    <!-- Satellite Agents -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-secondary);">satellite_alt</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">Satellite Agents</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="satellite-count">0</div>
+        </div>
+    </div>
+
+    <!-- Leader Agents -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-warning);">supervisor_account</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">Leader Agents</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="leader-count">0</div>
+        </div>
+    </div>
+
+    <!-- Discussion Groups -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-success);">groups</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">Discussion Groups</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="discussion-groups-count">0</div>
+        </div>
+    </div>
+</div>
+
+<!-- ADK Agents List -->
+<div class="adk-card">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">view_list</span>
+            Active Agents
+        </h2>
+    </div>
+    <div class="adk-card-content">
+        <div id="agents-container" class="adk-agents-grid">
+            <div class="adk-loading-state">
+                <span class="material-icons adk-loading-spinner">refresh</span>
+                <span>Loading agents...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ADK Discussion Groups Management -->
+<div class="adk-card" style="margin-top: 32px;">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">groups</span>
+            Discussion Groups
+        </h2>
+        <button class="adk-btn adk-btn-secondary" onclick="refreshDiscussionGroups()">
+            <span class="material-icons">refresh</span>
+            Refresh
+        </button>
+    </div>
+    <div class="adk-card-content">
+        <div id="discussion-groups-container">
+            <div class="adk-loading-state">
+                <span class="material-icons adk-loading-spinner">refresh</span>
+                <span>Loading discussion groups...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ADK Agent Details Modal -->
+<div id="agentModal" class="adk-modal" style="display: none;">
+    <div class="adk-modal-backdrop" onclick="closeAgentModal()"></div>
+    <div class="adk-modal-content">
+        <div class="adk-modal-header">
+            <h2 class="adk-modal-title">
+                <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">smart_toy</span>
+                Agent Details
+            </h2>
+            <button class="adk-modal-close" onclick="closeAgentModal()">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="adk-modal-body">
+            <div id="agent-details-content">
+                <!-- Agent details content will be populated here -->
+            </div>
+        </div>
+        <div class="adk-modal-footer">
+            <button class="adk-btn adk-btn-secondary" onclick="closeAgentModal()">
+                Close
+            </button>
+            <button class="adk-btn adk-btn-primary" onclick="runAgent()">
+                <span class="material-icons">play_arrow</span>
+                Run Agent
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ADK Discussion Group Details Modal -->
+<div id="discussionGroupModal" class="adk-modal" style="display: none;">
+    <div class="adk-modal-backdrop" onclick="closeDiscussionGroupModal()"></div>
+    <div class="adk-modal-content">
+        <div class="adk-modal-header">
+            <h2 class="adk-modal-title">
+                <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">groups</span>
+                Discussion Group Details
+            </h2>
+            <button class="adk-modal-close" onclick="closeDiscussionGroupModal()">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="adk-modal-body">
+            <div id="discussion-group-details-content">
+                <!-- Discussion group details content will be populated here -->
+            </div>
+        </div>
+        <div class="adk-modal-footer">
+            <button class="adk-btn adk-btn-secondary" onclick="closeDiscussionGroupModal()">
+                Close
+            </button>
+            <button class="adk-btn adk-btn-primary" onclick="monitorDiscussionGroup()">
+                <span class="material-icons">visibility</span>
+                Monitor Group
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ADK Run Agent Modal -->
+<div id="runAgentModal" class="adk-modal" style="display: none;">
+    <div class="adk-modal-backdrop" onclick="closeRunAgentModal()"></div>
+    <div class="adk-modal-content">
+        <div class="adk-modal-header">
+            <h2 class="adk-modal-title">
+                <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">play_arrow</span>
+                Run Agent
+            </h2>
+            <button class="adk-modal-close" onclick="closeRunAgentModal()">
+                <span class="material-icons">close</span>
+            </button>
+        </div>
+        <div class="adk-modal-body">
+            <div class="adk-form-field">
+                <label class="adk-form-label" for="agent-message">Message</label>
+                <textarea id="agent-message" class="adk-form-input" rows="4"
+                         placeholder="Enter message to send to the agent..."></textarea>
+            </div>
+
+            <div id="agent-response" class="adk-response-container" style="display: none;">
+                <h3 class="adk-response-title">Agent Response</h3>
+                <div id="response-content" class="adk-response-content"></div>
+            </div>
+        </div>
+        <div class="adk-modal-footer">
+            <button class="adk-btn adk-btn-secondary" onclick="closeRunAgentModal()">
+                Cancel
+            </button>
+            <button class="adk-btn adk-btn-primary" onclick="sendMessage()">
+                <span class="material-icons">send</span>
+                Send
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ADK Agents Grid */
+    .adk-agents-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 24px;
+    }
+
+    /* ADK Loading State */
+    .adk-loading-state {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 48px;
+        color: var(--adk-on-surface-variant);
+        font-size: 16px;
+    }
+
+    .adk-loading-spinner {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    /* ADK Agent Card */
+    .adk-agent-card {
+        background: var(--adk-surface);
+        border: 1px solid var(--adk-outline-variant);
+        border-radius: 12px;
+        padding: 20px;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .adk-agent-card:hover {
+        box-shadow: var(--adk-elevation-2);
+        transform: translateY(-2px);
+        border-color: var(--adk-primary);
+    }
+
+    .adk-agent-card-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+
+    .adk-agent-avatar {
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 24px;
+        flex-shrink: 0;
+    }
+
+    .adk-agent-avatar.scheduler {
+        background: linear-gradient(135deg, var(--adk-primary), #1557b0);
+    }
+
+    .adk-agent-avatar.satellite {
+        background: linear-gradient(135deg, var(--adk-secondary), #2d7d32);
+    }
+
+    .adk-agent-avatar.leader {
+        background: linear-gradient(135deg, var(--adk-warning), #e8710a);
+    }
+
+    .adk-agent-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .adk-agent-name {
+        font-size: 18px;
+        font-weight: 500;
+        color: var(--adk-on-surface);
+        margin: 0 0 4px 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .adk-agent-type {
+        font-size: 14px;
+        color: var(--adk-on-surface-variant);
+        margin: 0;
+    }
+
+    .adk-agent-description {
+        font-size: 14px;
+        color: var(--adk-on-surface-variant);
+        line-height: 1.4;
+        margin-bottom: 16px;
+    }
+
+    .adk-agent-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .adk-agent-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    /* ADK Modal Styles */
+    .adk-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .adk-modal-backdrop {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    .adk-modal-content {
+        background: var(--adk-surface);
+        border-radius: 12px;
+        box-shadow: var(--adk-elevation-3);
+        max-width: 600px;
+        width: 90%;
+        max-height: 80vh;
+        overflow: hidden;
+        position: relative;
+        z-index: 1001;
+    }
+
+    .adk-modal-header {
+        padding: 24px 24px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .adk-modal-title {
+        font-size: 20px;
+        font-weight: 500;
+        margin: 0;
+        color: var(--adk-on-surface);
+    }
+
+    .adk-modal-close {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--adk-on-surface-variant);
+        padding: 8px;
+        border-radius: 50%;
+        transition: background-color 0.2s;
+    }
+
+    .adk-modal-close:hover {
+        background-color: rgba(0, 0, 0, 0.04);
+    }
+
+    .adk-modal-body {
+        padding: 24px;
+        overflow-y: auto;
+        max-height: 60vh;
+    }
+
+    .adk-modal-footer {
+        padding: 0 24px 24px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+    }
+
+    /* ADK Form Styles */
+    .adk-form-field {
+        margin-bottom: 20px;
+    }
+
+    .adk-form-label {
+        display: block;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--adk-on-surface);
+        margin-bottom: 8px;
+    }
+
+    .adk-form-input {
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid var(--adk-outline);
+        border-radius: 8px;
+        font-size: 14px;
+        font-family: inherit;
+        background: var(--adk-surface);
+        color: var(--adk-on-surface);
+        transition: border-color 0.2s;
+        resize: vertical;
+    }
+
+    .adk-form-input:focus {
+        outline: none;
+        border-color: var(--adk-primary);
+    }
+
+    /* ADK Response Container */
+    .adk-response-container {
+        margin-top: 20px;
+        padding: 16px;
+        background: rgba(26, 115, 232, 0.04);
+        border-radius: 8px;
+        border: 1px solid rgba(26, 115, 232, 0.12);
+    }
+
+    .adk-response-title {
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--adk-on-surface);
+        margin: 0 0 12px 0;
+    }
+
+    .adk-response-content {
+        font-size: 14px;
+        color: var(--adk-on-surface-variant);
+        line-height: 1.5;
+        font-family: 'Roboto Mono', monospace;
+        white-space: pre-wrap;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ADK Agents Management - Official Implementation
+    let currentAgentId = null;
+
+    // Initialize agents page
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshAgents();
+        refreshDiscussionGroups();
+        console.log('ADK Agents page initialized');
+    });
+
+    // Refresh agents list
+    function refreshAgents() {
+        showLoadingState();
+
+        fetch('/api/agents/list')
+            .then(response => response.json())
+            .then(data => {
+                displayAgents(data.agents);
+                updateAgentCounts(data.agents);
+            })
+            .catch(error => {
+                console.error('Failed to fetch agents:', error);
+                showErrorState('Failed to load agents');
+            });
+    }
+
+    // Show loading state
+    function showLoadingState() {
+        const container = document.getElementById('agents-container');
+        container.innerHTML = `
+            <div class="adk-loading-state">
+                <span class="material-icons adk-loading-spinner">refresh</span>
+                <span>Loading agents...</span>
+            </div>
+        `;
+    }
+
+    // Show error state
+    function showErrorState(message) {
+        const container = document.getElementById('agents-container');
+        container.innerHTML = `
+            <div class="adk-loading-state">
+                <span class="material-icons" style="color: var(--adk-danger);">error</span>
+                <span>${message}</span>
+            </div>
+        `;
+    }
+
+    // Display agents in ADK style
+    function displayAgents(agents) {
+        const container = document.getElementById('agents-container');
+
+        if (agents.length === 0) {
+            container.innerHTML = `
+                <div class="adk-loading-state">
+                    <span class="material-icons">info</span>
+                    <span>No agents available</span>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+
+        agents.forEach(agent => {
+            const agentType = getAgentTypeClass(agent.type);
+            const iconName = getAgentIcon(agent.type);
+
+            html += `
+                <div class="adk-agent-card" onclick="showAgentDetails('${agent.id}')">
+                    <div class="adk-agent-card-header">
+                        <div class="adk-agent-avatar ${agentType}">
+                            <span class="material-icons">${iconName}</span>
+                        </div>
+                        <div class="adk-agent-info">
+                            <h3 class="adk-agent-name">${agent.name}</h3>
+                            <p class="adk-agent-type">${agent.type}</p>
+                        </div>
+                    </div>
+                    <div class="adk-agent-description">
+                        ${agent.description}
+                    </div>
+                    <div class="adk-agent-footer">
+                        <div class="adk-status adk-status-${agent.status}">
+                            <div class="adk-status-dot"></div>
+                            <span>${agent.status.toUpperCase()}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+    
+    // Update agent counts
+    function updateAgentCounts(agents) {
+        let schedulerCount = 0;
+        let satelliteCount = 0;
+        let leaderCount = 0;
+
+        agents.forEach(agent => {
+            if (agent.type === 'LlmAgent' && agent.id === 'simulation_scheduler') {
+                schedulerCount++;
+            } else if (agent.type === 'SatelliteAgent') {
+                satelliteCount++;
+            } else if (agent.type === 'LeaderAgent') {
+                leaderCount++;
+            }
+        });
+
+        document.getElementById('scheduler-count').textContent = schedulerCount;
+        document.getElementById('satellite-count').textContent = satelliteCount;
+        document.getElementById('leader-count').textContent = leaderCount;
+    }
+
+    // Get agent icon (Material Icons)
+    function getAgentIcon(type) {
+        switch (type) {
+            case 'LlmAgent': return 'psychology';
+            case 'SatelliteAgent': return 'satellite_alt';
+            case 'LeaderAgent': return 'supervisor_account';
+            default: return 'smart_toy';
+        }
+    }
+
+    // Get agent type class
+    function getAgentTypeClass(type) {
+        switch (type) {
+            case 'LlmAgent': return 'scheduler';
+            case 'SatelliteAgent': return 'satellite';
+            case 'LeaderAgent': return 'leader';
+            default: return 'scheduler';
+        }
+    }
+    
+    // Show agent details in ADK modal
+    function showAgentDetails(agentId) {
+        currentAgentId = agentId;
+
+        fetch(`/api/agents/${agentId}/details`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showNotification('error', 'Error', data.error);
+                    return;
+                }
+
+                const content = document.getElementById('agent-details-content');
+                content.innerHTML = `
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+                        <div>
+                            <h3 style="font-size: 16px; font-weight: 500; margin-bottom: 16px; color: var(--adk-on-surface);">
+                                Basic Information
+                            </h3>
+                            <div style="display: flex; flex-direction: column; gap: 12px;">
+                                <div class="adk-info-item">
+                                    <div class="adk-info-label">ID</div>
+                                    <div class="adk-info-value adk-mono">${data.id}</div>
+                                </div>
+                                <div class="adk-info-item">
+                                    <div class="adk-info-label">Name</div>
+                                    <div class="adk-info-value">${data.name}</div>
+                                </div>
+                                <div class="adk-info-item">
+                                    <div class="adk-info-label">Type</div>
+                                    <div class="adk-info-value">${data.type}</div>
+                                </div>
+                                <div class="adk-info-item">
+                                    <div class="adk-info-label">Status</div>
+                                    <div class="adk-status adk-status-${data.status}">
+                                        <div class="adk-status-dot"></div>
+                                        <span>${data.status.toUpperCase()}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 style="font-size: 16px; font-weight: 500; margin-bottom: 16px; color: var(--adk-on-surface);">
+                                Available Tools
+                            </h3>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                ${data.tools.map(tool => `
+                                    <div style="padding: 8px 12px; background: var(--adk-background); border-radius: 6px; font-size: 14px; color: var(--adk-on-surface-variant);">
+                                        ${tool}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 style="font-size: 16px; font-weight: 500; margin-bottom: 12px; color: var(--adk-on-surface);">
+                            Description
+                        </h3>
+                        <p style="color: var(--adk-on-surface-variant); line-height: 1.5; margin: 0;">
+                            ${data.description || 'No description available'}
+                        </p>
+                    </div>
+                `;
+
+                showModal('agentModal');
+            })
+            .catch(error => {
+                console.error('Failed to fetch agent details:', error);
+                showNotification('error', 'Error', 'Failed to fetch agent details');
+            });
+    }
+    
+    // Run agent - ADK style
+    function runAgent() {
+        if (!currentAgentId) return;
+
+        closeAgentModal();
+        showModal('runAgentModal');
+
+        // Clear previous response
+        document.getElementById('agent-response').style.display = 'none';
+        document.getElementById('agent-message').value = '';
+    }
+
+    // Send message to agent
+    function sendMessage() {
+        const message = document.getElementById('agent-message').value.trim();
+        if (!message || !currentAgentId) return;
+
+        // 立即关闭对话窗口
+        closeRunAgentModal();
+
+        // 在日志中显示发送的消息
+        if (typeof addAgentLog === 'function') {
+            addAgentLog('system', `User → Agent ${currentAgentId}`, `Message: ${message}`);
+        }
+
+        // Send message via Socket.IO
+        socket.emit('run_agent', {
+            agent_id: currentAgentId,
+            message: message
+        });
+
+        // 显示通知并提示查看日志面板
+        showNotification('success', 'Message Sent', `Message sent to agent ${currentAgentId}. Check the logs panel below for responses.`);
+
+        // 确保日志面板是展开的
+        const panel = document.getElementById('agent-logs-panel');
+        if (panel && panel.classList.contains('collapsed')) {
+            toggleLogsPanel();
+        }
+    }
+
+    // Handle agent response - 现在通过日志面板显示
+    socket.on('agent_response', function(data) {
+        // 响应现在通过base.html中的日志系统处理
+        if (data.error) {
+            showNotification('error', 'Agent Error', data.error);
+        } else if (!data.partial) {
+            showNotification('success', 'Agent Response', 'Response received and logged');
+        }
+    });
+
+    // Discussion Groups Management Functions
+    let currentDiscussionGroupId = null;
+
+    // Refresh discussion groups
+    function refreshDiscussionGroups() {
+        const container = document.getElementById('discussion-groups-container');
+        container.innerHTML = `
+            <div class="adk-loading-state">
+                <span class="material-icons adk-loading-spinner">refresh</span>
+                <span>Loading discussion groups...</span>
+            </div>
+        `;
+
+        fetch('/api/discussion-groups')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    container.innerHTML = `
+                        <div class="adk-error-state">
+                            <span class="material-icons">error</span>
+                            <span>Error: ${data.error}</span>
+                        </div>
+                    `;
+                    return;
+                }
+
+                if (data.groups.length === 0) {
+                    container.innerHTML = `
+                        <div class="adk-empty-state">
+                            <span class="material-icons">groups</span>
+                            <span>No active discussion groups</span>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Update discussion groups count
+                document.getElementById('discussion-groups-count').textContent = data.groups.length;
+
+                // Render discussion groups
+                container.innerHTML = data.groups.map(group => `
+                    <div class="adk-agent-card" onclick="showDiscussionGroupDetails('${group.group_id}')">
+                        <div class="adk-agent-header">
+                            <div class="adk-agent-icon">
+                                <span class="material-icons">groups</span>
+                            </div>
+                            <div class="adk-agent-info">
+                                <div class="adk-agent-name">${group.group_id}</div>
+                                <div class="adk-agent-type">Target: ${group.target_id || group.missile_id}</div>
+                            </div>
+                            <div class="adk-status adk-status-${group.status}">
+                                <div class="adk-status-dot"></div>
+                                <span>${group.status.toUpperCase()}</span>
+                            </div>
+                        </div>
+                        <div class="adk-agent-details">
+                            <div class="adk-agent-detail">
+                                <span class="adk-agent-detail-label">Participants:</span>
+                                <span class="adk-agent-detail-value">${group.participants ? group.participants.length : 0}</span>
+                            </div>
+                            <div class="adk-agent-detail">
+                                <span class="adk-agent-detail-label">Leader:</span>
+                                <span class="adk-agent-detail-value">${group.leader || 'N/A'}</span>
+                            </div>
+                            <div class="adk-agent-detail">
+                                <span class="adk-agent-detail-label">Created:</span>
+                                <span class="adk-agent-detail-value">${new Date(group.created_time).toLocaleTimeString()}</span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            })
+            .catch(error => {
+                console.error('Failed to fetch discussion groups:', error);
+                container.innerHTML = `
+                    <div class="adk-error-state">
+                        <span class="material-icons">error</span>
+                        <span>Failed to load discussion groups</span>
+                    </div>
+                `;
+            });
+    }
+
+    // Show discussion group details
+    function showDiscussionGroupDetails(groupId) {
+        currentDiscussionGroupId = groupId;
+
+        fetch(`/api/discussion-groups/${groupId}/details`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showNotification('error', 'Error', data.error);
+                    return;
+                }
+
+                const content = document.getElementById('discussion-group-details-content');
+                content.innerHTML = `
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+                        <div>
+                            <h3 style="font-size: 16px; font-weight: 500; margin-bottom: 16px; color: var(--adk-on-surface);">
+                                Group Information
+                            </h3>
+                            <div style="display: flex; flex-direction: column; gap: 12px;">
+                                <div class="adk-info-item">
+                                    <div class="adk-info-label">Group ID</div>
+                                    <div class="adk-info-value adk-mono">${data.group_id}</div>
+                                </div>
+                                <div class="adk-info-item">
+                                    <div class="adk-info-label">Target</div>
+                                    <div class="adk-info-value">${data.target_id || data.missile_id}</div>
+                                </div>
+                                <div class="adk-info-item">
+                                    <div class="adk-info-label">Status</div>
+                                    <div class="adk-status adk-status-${data.status}">
+                                        <div class="adk-status-dot"></div>
+                                        <span>${data.status.toUpperCase()}</span>
+                                    </div>
+                                </div>
+                                <div class="adk-info-item">
+                                    <div class="adk-info-label">Leader</div>
+                                    <div class="adk-info-value">${data.leader || 'N/A'}</div>
+                                </div>
+                                <div class="adk-info-item">
+                                    <div class="adk-info-label">Created</div>
+                                    <div class="adk-info-value">${new Date(data.created_time).toLocaleString()}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 style="font-size: 16px; font-weight: 500; margin-bottom: 16px; color: var(--adk-on-surface);">
+                                Participants
+                            </h3>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                ${(data.participants || []).map(participant => `
+                                    <div style="padding: 8px 12px; background: var(--adk-background); border-radius: 6px; font-size: 14px; color: var(--adk-on-surface-variant);">
+                                        <span class="material-icons" style="font-size: 16px; margin-right: 8px; vertical-align: middle;">satellite_alt</span>
+                                        ${participant}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 style="font-size: 16px; font-weight: 500; margin-bottom: 12px; color: var(--adk-on-surface);">
+                            Discussion Progress
+                        </h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 16px;">
+                            <div class="adk-metric-card">
+                                <div class="adk-metric-value">${data.coordination_rounds || 0}</div>
+                                <div class="adk-metric-label">Rounds</div>
+                            </div>
+                            <div class="adk-metric-card">
+                                <div class="adk-metric-value">${data.max_rounds || 5}</div>
+                                <div class="adk-metric-label">Max Rounds</div>
+                            </div>
+                            <div class="adk-metric-card">
+                                <div class="adk-metric-value">${Math.floor((data.timeout || 600) / 60)}</div>
+                                <div class="adk-metric-label">Timeout (min)</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                showModal('discussionGroupModal');
+            })
+            .catch(error => {
+                console.error('Failed to fetch discussion group details:', error);
+                showNotification('error', 'Error', 'Failed to fetch discussion group details');
+            });
+    }
+
+    // Close discussion group modal
+    function closeDiscussionGroupModal() {
+        hideModal('discussionGroupModal');
+        currentDiscussionGroupId = null;
+    }
+
+    // Monitor discussion group
+    function monitorDiscussionGroup() {
+        if (!currentDiscussionGroupId) return;
+
+        closeDiscussionGroupModal();
+        showNotification('info', 'Monitoring', `Monitoring discussion group ${currentDiscussionGroupId}`);
+
+        // 这里可以添加实时监控功能
+        // 例如：跳转到专门的监控页面或开启实时更新
+    }
+
+    // ADK Modal Management
+    function showModal(modalId) {
+        const modal = document.getElementById(modalId);
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    function hideModal(modalId) {
+        const modal = document.getElementById(modalId);
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+
+    function closeAgentModal() {
+        const modal = document.getElementById('agentModal');
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+
+    function closeRunAgentModal() {
+        const modal = document.getElementById('runAgentModal');
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+
+    // Close modals on escape key
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeAgentModal();
+            closeRunAgentModal();
+        }
+    });
+</script>
+{% endblock %}

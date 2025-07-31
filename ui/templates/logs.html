@@ -1,0 +1,407 @@
+{% extends "base.html" %}
+
+{% block title %}ADK开发UI - 日志查看{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-file-alt me-2"></i>
+                日志查看
+            </h1>
+            <div>
+                <button class="btn btn-outline-secondary me-2" onclick="clearLogs()">
+                    <i class="fas fa-trash me-1"></i>
+                    清空日志
+                </button>
+                <button class="btn btn-primary" onclick="refreshLogs()">
+                    <i class="fas fa-sync-alt me-1"></i>
+                    刷新
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 日志统计 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-info-circle fa-2x text-info mb-2"></i>
+                <h5 class="card-title">信息</h5>
+                <p class="card-text">
+                    <span class="h4" id="info-count">0</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
+                <h5 class="card-title">警告</h5>
+                <p class="card-text">
+                    <span class="h4" id="warning-count">0</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-times-circle fa-2x text-danger mb-2"></i>
+                <h5 class="card-title">错误</h5>
+                <p class="card-text">
+                    <span class="h4" id="error-count">0</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-bug fa-2x text-secondary mb-2"></i>
+                <h5 class="card-title">调试</h5>
+                <p class="card-text">
+                    <span class="h4" id="debug-count">0</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 日志过滤器 -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-filter me-2"></i>
+                    日志过滤器
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <label for="level-filter" class="form-label">日志级别</label>
+                        <select class="form-select" id="level-filter" onchange="filterLogs()">
+                            <option value="">全部级别</option>
+                            <option value="info">信息</option>
+                            <option value="warning">警告</option>
+                            <option value="error">错误</option>
+                            <option value="debug">调试</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="search-filter" class="form-label">搜索关键词</label>
+                        <input type="text" class="form-control" id="search-filter" 
+                               placeholder="输入搜索关键词" onkeyup="filterLogs()">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="time-filter" class="form-label">时间范围</label>
+                        <select class="form-select" id="time-filter" onchange="filterLogs()">
+                            <option value="">全部时间</option>
+                            <option value="1h">最近1小时</option>
+                            <option value="6h">最近6小时</option>
+                            <option value="24h">最近24小时</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">自动刷新</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="auto-refresh" 
+                                   onchange="toggleAutoRefresh()">
+                            <label class="form-check-label" for="auto-refresh">
+                                启用自动刷新
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 日志内容 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>
+                    日志内容
+                </h5>
+                <div>
+                    <span class="badge bg-secondary" id="log-count">0 条日志</span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="logs-container" style="max-height: 600px; overflow-y: auto; font-family: 'Courier New', monospace;">
+                    <div class="text-center text-muted p-4">
+                        <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                        <p>加载日志...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .log-entry {
+        padding: 12px 16px;
+        border-bottom: 1px solid #eee;
+        transition: background-color 0.2s;
+    }
+    
+    .log-entry:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .log-entry:last-child {
+        border-bottom: none;
+    }
+    
+    .log-timestamp {
+        color: #6c757d;
+        font-size: 0.9em;
+        font-weight: 500;
+    }
+    
+    .log-level {
+        font-weight: bold;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.8em;
+        margin: 0 8px;
+    }
+    
+    .log-level-info {
+        background-color: #d1ecf1;
+        color: #0c5460;
+    }
+    
+    .log-level-warning {
+        background-color: #fff3cd;
+        color: #856404;
+    }
+    
+    .log-level-error {
+        background-color: #f8d7da;
+        color: #721c24;
+    }
+    
+    .log-level-debug {
+        background-color: #e2e3e5;
+        color: #383d41;
+    }
+    
+    .log-message {
+        margin-top: 4px;
+        line-height: 1.4;
+    }
+    
+    .log-highlight {
+        background-color: #fff3cd;
+        padding: 1px 3px;
+        border-radius: 2px;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let allLogs = [];
+    let filteredLogs = [];
+    let autoRefreshInterval = null;
+    
+    // 页面加载时获取日志
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshLogs();
+    });
+    
+    // 刷新日志
+    function refreshLogs() {
+        fetch('/api/logs')
+            .then(response => response.json())
+            .then(data => {
+                allLogs = data.logs || [];
+                filterLogs();
+                updateLogCounts();
+            })
+            .catch(error => {
+                console.error('获取日志失败:', error);
+                document.getElementById('logs-container').innerHTML = 
+                    '<div class="alert alert-danger m-3">获取日志失败</div>';
+            });
+    }
+    
+    // 过滤日志
+    function filterLogs() {
+        const levelFilter = document.getElementById('level-filter').value;
+        const searchFilter = document.getElementById('search-filter').value.toLowerCase();
+        const timeFilter = document.getElementById('time-filter').value;
+        
+        filteredLogs = allLogs.filter(log => {
+            // 级别过滤
+            if (levelFilter && log.level !== levelFilter) {
+                return false;
+            }
+            
+            // 搜索过滤
+            if (searchFilter && !log.message.toLowerCase().includes(searchFilter)) {
+                return false;
+            }
+            
+            // 时间过滤
+            if (timeFilter) {
+                const logTime = new Date(log.timestamp);
+                const now = new Date();
+                const hours = parseInt(timeFilter.replace('h', ''));
+                const cutoff = new Date(now.getTime() - hours * 60 * 60 * 1000);
+                
+                if (logTime < cutoff) {
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        displayLogs();
+    }
+    
+    // 显示日志
+    function displayLogs() {
+        const container = document.getElementById('logs-container');
+        const searchTerm = document.getElementById('search-filter').value.toLowerCase();
+        
+        if (filteredLogs.length === 0) {
+            container.innerHTML = 
+                '<div class="text-center text-muted p-4"><p>没有找到匹配的日志</p></div>';
+            document.getElementById('log-count').textContent = '0 条日志';
+            return;
+        }
+        
+        let html = '';
+        filteredLogs.forEach(log => {
+            let message = log.message;
+            
+            // 高亮搜索关键词
+            if (searchTerm) {
+                const regex = new RegExp(`(${escapeRegex(searchTerm)})`, 'gi');
+                message = message.replace(regex, '<span class="log-highlight">$1</span>');
+            }
+            
+            html += `
+                <div class="log-entry">
+                    <div class="d-flex align-items-center">
+                        <span class="log-timestamp">${formatTimestamp(log.timestamp)}</span>
+                        <span class="log-level log-level-${log.level}">${log.level.toUpperCase()}</span>
+                    </div>
+                    <div class="log-message">${message}</div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        document.getElementById('log-count').textContent = `${filteredLogs.length} 条日志`;
+        
+        // 滚动到底部
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    // 更新日志计数
+    function updateLogCounts() {
+        const counts = {
+            info: 0,
+            warning: 0,
+            error: 0,
+            debug: 0
+        };
+        
+        allLogs.forEach(log => {
+            if (counts.hasOwnProperty(log.level)) {
+                counts[log.level]++;
+            }
+        });
+        
+        document.getElementById('info-count').textContent = counts.info;
+        document.getElementById('warning-count').textContent = counts.warning;
+        document.getElementById('error-count').textContent = counts.error;
+        document.getElementById('debug-count').textContent = counts.debug;
+    }
+    
+    // 格式化时间戳
+    function formatTimestamp(timestamp) {
+        const date = new Date(timestamp);
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+    
+    // 转义正则表达式特殊字符
+    function escapeRegex(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    
+    // 清空日志
+    function clearLogs() {
+        if (confirm('确定要清空所有日志吗？此操作不可撤销。')) {
+            allLogs = [];
+            filteredLogs = [];
+            displayLogs();
+            updateLogCounts();
+            showAlert('success', '日志已清空');
+        }
+    }
+    
+    // 切换自动刷新
+    function toggleAutoRefresh() {
+        const checkbox = document.getElementById('auto-refresh');
+        
+        if (checkbox.checked) {
+            autoRefreshInterval = setInterval(refreshLogs, 5000); // 每5秒刷新
+            showAlert('info', '已启用自动刷新（每5秒）');
+        } else {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+            showAlert('info', '已禁用自动刷新');
+        }
+    }
+    
+    // 监听新日志
+    socket.on('new_log', function(logEntry) {
+        allLogs.push(logEntry);
+        
+        // 限制日志数量
+        if (allLogs.length > 1000) {
+            allLogs = allLogs.slice(-500);
+        }
+        
+        filterLogs();
+        updateLogCounts();
+    });
+    
+    // 页面卸载时清理定时器
+    window.addEventListener('beforeunload', function() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+    });
+</script>
+{% endblock %}

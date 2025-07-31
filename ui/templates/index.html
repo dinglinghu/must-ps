@@ -1,0 +1,543 @@
+{% extends "base.html" %}
+
+{% block title %}ADK Development UI - Dashboard{% endblock %}
+
+{% block content %}
+<!-- ADK Dashboard Header -->
+<div style="margin-bottom: 32px;">
+    <h1 style="font-size: 28px; font-weight: 400; margin: 0 0 8px 0; color: var(--adk-on-surface);">
+        Multi-Agent System Dashboard
+    </h1>
+    <p style="color: var(--adk-on-surface-variant); margin: 0; font-size: 16px;">
+        Monitor and manage your ADK-powered multi-agent system
+    </p>
+</div>
+
+<!-- ADK Metrics Grid -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-bottom: 32px;">
+    <!-- System Status Card -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-primary);">memory</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">System Status</h3>
+            <div id="overview-system-status" class="adk-status adk-status-idle">
+                <div class="adk-status-dot"></div>
+                <span>Initializing</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agents Count Card -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-secondary);">smart_toy</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">Active Agents</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="agent-count">0</div>
+        </div>
+    </div>
+
+    <!-- Sessions Count Card -->
+    <div class="adk-card">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-warning);">chat</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">Active Sessions</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="session-count">0</div>
+        </div>
+    </div>
+
+    <!-- Discussion Groups Card -->
+    <div class="adk-card" onclick="window.location.href='/discussion-groups'" style="cursor: pointer;">
+        <div class="adk-card-content" style="text-align: center;">
+            <div style="margin-bottom: 16px;">
+                <span class="material-icons" style="font-size: 48px; color: var(--adk-danger);">groups</span>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 500; margin: 0 0 8px 0;">Discussion Groups</h3>
+            <div style="font-size: 32px; font-weight: 400; color: var(--adk-on-surface);" id="group-count">0</div>
+        </div>
+    </div>
+</div>
+
+<!-- ADK System Architecture -->
+<div class="adk-card" style="margin-bottom: 32px;">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">account_tree</span>
+            System Architecture
+        </h2>
+    </div>
+    <div class="adk-card-content">
+        <div class="adk-architecture-diagram">
+            <!-- Simulation Scheduler Agent -->
+            <div class="adk-agent-tier">
+                <div class="adk-agent-node adk-agent-scheduler">
+                    <div class="adk-agent-icon">
+                        <span class="material-icons">psychology</span>
+                    </div>
+                    <div class="adk-agent-info">
+                        <div class="adk-agent-title">Simulation Scheduler</div>
+                        <div class="adk-agent-subtitle">Coordination & Planning</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connection Line -->
+            <div class="adk-connection-line"></div>
+
+            <!-- Leader Agents Tier -->
+            <div class="adk-agent-tier">
+                <div class="adk-agent-node adk-agent-leader">
+                    <div class="adk-agent-icon">
+                        <span class="material-icons">supervisor_account</span>
+                    </div>
+                    <div class="adk-agent-info">
+                        <div class="adk-agent-title">Leader Agent</div>
+                        <div class="adk-agent-subtitle">Group Coordination</div>
+                    </div>
+                </div>
+                <div class="adk-agent-node adk-agent-leader">
+                    <div class="adk-agent-icon">
+                        <span class="material-icons">supervisor_account</span>
+                    </div>
+                    <div class="adk-agent-info">
+                        <div class="adk-agent-title">Leader Agent</div>
+                        <div class="adk-agent-subtitle">Group Coordination</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connection Line -->
+            <div class="adk-connection-line"></div>
+
+            <!-- Satellite Agents Tier -->
+            <div class="adk-agent-tier">
+                <div class="adk-agent-node adk-agent-satellite">
+                    <div class="adk-agent-icon">
+                        <span class="material-icons">satellite_alt</span>
+                    </div>
+                    <div class="adk-agent-info">
+                        <div class="adk-agent-title">Satellite Agent</div>
+                        <div class="adk-agent-subtitle">Task Execution</div>
+                    </div>
+                </div>
+                <div class="adk-agent-node adk-agent-satellite">
+                    <div class="adk-agent-icon">
+                        <span class="material-icons">satellite_alt</span>
+                    </div>
+                    <div class="adk-agent-info">
+                        <div class="adk-agent-title">Satellite Agent</div>
+                        <div class="adk-agent-subtitle">Task Execution</div>
+                    </div>
+                </div>
+                <div class="adk-agent-node adk-agent-satellite">
+                    <div class="adk-agent-icon">
+                        <span class="material-icons">satellite_alt</span>
+                    </div>
+                    <div class="adk-agent-info">
+                        <div class="adk-agent-title">Satellite Agent</div>
+                        <div class="adk-agent-subtitle">Task Execution</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ADK Quick Actions and System Info -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px;">
+    <!-- Quick Actions -->
+    <div class="adk-card">
+        <div class="adk-card-header">
+            <h2 class="adk-card-title">
+                <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">flash_on</span>
+                Quick Actions
+            </h2>
+        </div>
+        <div class="adk-card-content">
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <button class="adk-btn adk-btn-primary" onclick="window.location.href='/agents'">
+                    <span class="material-icons">smart_toy</span>
+                    Manage Agents
+                </button>
+                <button class="adk-btn adk-btn-secondary" onclick="startNewSession()">
+                    <span class="material-icons">add_circle</span>
+                    New Session
+                </button>
+                <button class="adk-btn adk-btn-secondary" onclick="window.location.href='/logs'">
+                    <span class="material-icons">article</span>
+                    View Logs
+                </button>
+                <button class="adk-btn adk-btn-secondary" onclick="window.location.href='/config'">
+                    <span class="material-icons">settings</span>
+                    Configuration
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Information -->
+    <div class="adk-card">
+        <div class="adk-card-header">
+            <h2 class="adk-card-title">
+                <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">info</span>
+                System Information
+            </h2>
+        </div>
+        <div class="adk-card-content">
+            <div id="system-info" style="display: flex; flex-direction: column; gap: 12px;">
+                <div class="adk-info-item">
+                    <div class="adk-info-label">Configuration</div>
+                    <div class="adk-info-value adk-mono">config/config.yaml</div>
+                </div>
+                <div class="adk-info-item">
+                    <div class="adk-info-label">Output Directory</div>
+                    <div class="adk-info-value adk-mono">output/</div>
+                </div>
+                <div class="adk-info-item">
+                    <div class="adk-info-label">ADK Framework</div>
+                    <div class="adk-info-value">Python ADK</div>
+                </div>
+                <div class="adk-info-item">
+                    <div class="adk-info-label">Start Time</div>
+                    <div class="adk-info-value" id="start-time">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ADK Recent Activity -->
+<div class="adk-card">
+    <div class="adk-card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 class="adk-card-title">
+            <span class="material-icons" style="margin-right: 8px; vertical-align: middle;">history</span>
+            Recent Activity
+        </h2>
+        <button class="adk-btn adk-btn-secondary" onclick="window.location.href='/logs'">
+            <span class="material-icons">open_in_new</span>
+            View All
+        </button>
+    </div>
+    <div class="adk-card-content">
+        <div id="recent-logs" class="adk-activity-log">
+            <div class="adk-activity-empty">
+                <span class="material-icons">info</span>
+                <span>No recent activity</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ADK Architecture Diagram Styles */
+    .adk-architecture-diagram {
+        padding: 32px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+    }
+
+    .adk-agent-tier {
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+        flex-wrap: wrap;
+    }
+
+    .adk-agent-node {
+        display: flex;
+        align-items: center;
+        background: var(--adk-surface);
+        border: 1px solid var(--adk-outline-variant);
+        border-radius: 12px;
+        padding: 16px;
+        min-width: 200px;
+        box-shadow: var(--adk-elevation-1);
+        transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+        gap: 12px;
+    }
+
+    .adk-agent-node:hover {
+        box-shadow: var(--adk-elevation-2);
+        transform: translateY(-2px);
+    }
+
+    .adk-agent-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 24px;
+    }
+
+    .adk-agent-scheduler .adk-agent-icon {
+        background: linear-gradient(135deg, var(--adk-primary), #1557b0);
+    }
+
+    .adk-agent-leader .adk-agent-icon {
+        background: linear-gradient(135deg, var(--adk-warning), #e8710a);
+    }
+
+    .adk-agent-satellite .adk-agent-icon {
+        background: linear-gradient(135deg, var(--adk-secondary), #2d7d32);
+    }
+
+    .adk-agent-info {
+        flex: 1;
+    }
+
+    .adk-agent-title {
+        font-weight: 500;
+        font-size: 16px;
+        color: var(--adk-on-surface);
+        margin-bottom: 4px;
+    }
+
+    .adk-agent-subtitle {
+        font-size: 14px;
+        color: var(--adk-on-surface-variant);
+    }
+
+    .adk-connection-line {
+        width: 2px;
+        height: 32px;
+        background: linear-gradient(to bottom, var(--adk-outline), transparent);
+        margin: 0 auto;
+    }
+
+    /* ADK Info Items */
+    .adk-info-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--adk-outline-variant);
+    }
+
+    .adk-info-item:last-child {
+        border-bottom: none;
+    }
+
+    .adk-info-label {
+        font-weight: 500;
+        color: var(--adk-on-surface-variant);
+        font-size: 14px;
+    }
+
+    .adk-info-value {
+        color: var(--adk-on-surface);
+        font-size: 14px;
+    }
+
+    /* ADK Activity Log */
+    .adk-activity-log {
+        max-height: 300px;
+        overflow-y: auto;
+    }
+
+    .adk-activity-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 32px;
+        color: var(--adk-on-surface-variant);
+        font-size: 14px;
+    }
+
+    .adk-activity-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--adk-outline-variant);
+    }
+
+    .adk-activity-item:last-child {
+        border-bottom: none;
+    }
+
+    .adk-activity-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        color: white;
+        flex-shrink: 0;
+    }
+
+    .adk-activity-content {
+        flex: 1;
+    }
+
+    .adk-activity-title {
+        font-weight: 500;
+        font-size: 14px;
+        color: var(--adk-on-surface);
+        margin-bottom: 2px;
+    }
+
+    .adk-activity-time {
+        font-size: 12px;
+        color: var(--adk-on-surface-variant);
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ADK Dashboard - Official Implementation
+
+    // Initialize dashboard on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeDashboard();
+
+        // Update dashboard every 5 seconds
+        setInterval(updateDashboard, 5000);
+
+        // Set start time
+        document.getElementById('start-time').textContent = new Date().toLocaleString();
+    });
+
+    // Initialize ADK Dashboard
+    function initializeDashboard() {
+        updateDashboard();
+        console.log('ADK Dashboard initialized');
+    }
+
+    // Update dashboard metrics
+    function updateDashboard() {
+        fetch('/api/system/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    updateSystemStatusDisplay('error', 'Error');
+                    return;
+                }
+
+                // Update system status
+                const status = data.is_running ? 'active' : 'idle';
+                const statusText = data.is_running ? 'Running' : 'Stopped';
+                updateSystemStatusDisplay(status, statusText);
+
+                // Update metrics
+                const totalAgents = (data.satellite_agents_count || 0) +
+                                  (data.leader_agents_count || 0) + 1; // +1 for scheduler
+                document.getElementById('agent-count').textContent = totalAgents;
+                document.getElementById('session-count').textContent = data.active_sessions_count || 0;
+                document.getElementById('group-count').textContent = data.active_groups_count || 0;
+
+                // Update system info
+                updateSystemInfo(data);
+            })
+            .catch(error => {
+                console.error('Failed to fetch system status:', error);
+                updateSystemStatusDisplay('error', 'Connection Error');
+            });
+    }
+
+    // Update system status display
+    function updateSystemStatusDisplay(status, text) {
+        const statusElement = document.getElementById('overview-system-status');
+        statusElement.className = `adk-status adk-status-${status}`;
+        statusElement.innerHTML = `
+            <div class="adk-status-dot"></div>
+            <span>${text}</span>
+        `;
+    }
+
+    // Update system information
+    function updateSystemInfo(data) {
+        if (data.output_directory) {
+            const outputInfo = document.querySelector('.adk-info-item:nth-child(2) .adk-info-value');
+            if (outputInfo) {
+                outputInfo.textContent = data.output_directory;
+            }
+        }
+    }
+
+    // Start new session - ADK style
+    function startNewSession() {
+        showNotification('info', 'New Session', 'Session creation feature is in development');
+        // TODO: Implement session creation logic
+    }
+
+    // Handle new log entries
+    socket.on('new_log', function(logEntry) {
+        addActivityLogEntry(logEntry);
+    });
+
+    // Add activity log entry
+    function addActivityLogEntry(logEntry) {
+        const logsContainer = document.getElementById('recent-logs');
+
+        // Remove empty state if present
+        const emptyState = logsContainer.querySelector('.adk-activity-empty');
+        if (emptyState) {
+            emptyState.remove();
+        }
+
+        // Create activity item
+        const activityItem = document.createElement('div');
+        activityItem.className = 'adk-activity-item';
+
+        // Determine icon and color based on log level
+        let iconName = 'info';
+        let iconColor = 'var(--adk-primary)';
+
+        switch (logEntry.level) {
+            case 'error':
+                iconName = 'error';
+                iconColor = 'var(--adk-danger)';
+                break;
+            case 'warning':
+                iconName = 'warning';
+                iconColor = 'var(--adk-warning)';
+                break;
+            case 'success':
+                iconName = 'check_circle';
+                iconColor = 'var(--adk-secondary)';
+                break;
+        }
+
+        activityItem.innerHTML = `
+            <div class="adk-activity-icon" style="background-color: ${iconColor};">
+                <span class="material-icons">${iconName}</span>
+            </div>
+            <div class="adk-activity-content">
+                <div class="adk-activity-title">${logEntry.message}</div>
+                <div class="adk-activity-time">${new Date(logEntry.timestamp).toLocaleString()}</div>
+            </div>
+        `;
+
+        // Insert at the beginning
+        logsContainer.insertBefore(activityItem, logsContainer.firstChild);
+
+        // Limit to 10 entries
+        const activities = logsContainer.querySelectorAll('.adk-activity-item');
+        if (activities.length > 10) {
+            activities[activities.length - 1].remove();
+        }
+    }
+
+    // ADK Dashboard utilities
+    function refreshDashboard() {
+        updateDashboard();
+        showNotification('info', 'Dashboard', 'Dashboard refreshed');
+    }
+</script>
+{% endblock %}

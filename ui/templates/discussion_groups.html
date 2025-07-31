@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADK讨论组监控 - ADK开发UI</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --adk-primary: #1976d2;
+            --adk-primary-variant: #1565c0;
+            --adk-secondary: #03dac6;
+            --adk-background: #fafafa;
+            --adk-surface: #ffffff;
+            --adk-error: #b00020;
+            --adk-on-primary: #ffffff;
+            --adk-on-secondary: #000000;
+            --adk-on-background: #000000;
+            --adk-on-surface: #000000;
+            --adk-on-error: #ffffff;
+            --adk-success: #4caf50;
+            --adk-warning: #ff9800;
+            --adk-info: #2196f3;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--adk-background);
+            color: var(--adk-on-background);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--adk-primary), var(--adk-primary-variant));
+            color: var(--adk-on-primary);
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+        }
+
+        .nav-links {
+            margin-top: 0.5rem;
+        }
+
+        .nav-links a {
+            color: var(--adk-on-primary);
+            text-decoration: none;
+            margin-right: 1rem;
+            opacity: 0.9;
+            transition: opacity 0.2s;
+        }
+
+        .nav-links a:hover {
+            opacity: 1;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .controls {
+            background: var(--adk-surface);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--adk-primary);
+            color: var(--adk-on-primary);
+        }
+
+        .btn-primary:hover {
+            background: var(--adk-primary-variant);
+        }
+
+        .btn-success {
+            background: var(--adk-success);
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--adk-warning);
+            color: white;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background: rgba(76, 175, 80, 0.1);
+            color: var(--adk-success);
+        }
+
+        .status-completed {
+            background: rgba(33, 150, 243, 0.1);
+            color: var(--adk-info);
+        }
+
+        .status-failed {
+            background: rgba(176, 0, 32, 0.1);
+            color: var(--adk-error);
+        }
+
+        .status-timeout {
+            background: rgba(255, 152, 0, 0.1);
+            color: var(--adk-warning);
+        }
+
+        .discussion-groups-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .discussion-group-card {
+            background: var(--adk-surface);
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .discussion-group-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .group-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .group-title {
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--adk-primary);
+        }
+
+        .group-info {
+            margin-bottom: 1rem;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .info-label {
+            font-weight: 500;
+            color: #666;
+        }
+
+        .participants-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .participant-tag {
+            background: rgba(25, 118, 210, 0.1);
+            color: var(--adk-primary);
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+
+        .leader-tag {
+            background: rgba(76, 175, 80, 0.1);
+            color: var(--adk-success);
+            font-weight: 500;
+        }
+
+        .progress-section {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #eee;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #eee;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--adk-primary);
+            transition: width 0.3s;
+        }
+
+        .group-actions {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }
+
+        .empty-state .material-icons {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--adk-surface);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 500;
+            color: var(--adk-primary);
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 0.5rem;
+        }
+
+        .last-update {
+            text-align: center;
+            color: #666;
+            font-size: 0.9rem;
+            margin-top: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .discussion-groups-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🗣️ ADK讨论组监控</h1>
+        <div class="nav-links">
+            <a href="/">🏠 主页</a>
+            <a href="/agents">👥 智能体</a>
+            <a href="/sessions">📊 会话</a>
+            <a href="/config">⚙️ 配置</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 控制面板 -->
+        <div class="controls">
+            <button class="btn btn-primary" onclick="refreshData()">
+                <span class="material-icons">refresh</span>
+                刷新数据
+            </button>
+            <button class="btn btn-success" onclick="startAutoRefresh()">
+                <span class="material-icons">play_arrow</span>
+                自动刷新
+            </button>
+            <button class="btn btn-warning" onclick="stopAutoRefresh()">
+                <span class="material-icons">stop</span>
+                停止刷新
+            </button>
+            <div style="margin-left: auto;">
+                <span id="auto-refresh-status">手动刷新</span>
+            </div>
+        </div>
+
+        <!-- 统计信息 -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="total-groups">0</div>
+                <div class="stat-label">总讨论组</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="active-groups">0</div>
+                <div class="stat-label">活跃讨论组</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="completed-groups">0</div>
+                <div class="stat-label">已完成讨论组</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="adk-standard-groups">0</div>
+                <div class="stat-label">ADK标准讨论组</div>
+            </div>
+        </div>
+
+        <!-- 讨论组列表 -->
+        <div id="discussion-groups-container">
+            <div class="empty-state">
+                <div class="material-icons">groups</div>
+                <h3>正在加载讨论组数据...</h3>
+                <p>请稍候</p>
+            </div>
+        </div>
+
+        <div class="last-update" id="last-update">
+            最后更新: 等待数据...
+        </div>
+    </div>
+
+    <script>
+        let autoRefreshInterval = null;
+        let isAutoRefreshing = false;
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshData();
+        });
+
+        // 刷新数据
+        async function refreshData() {
+            try {
+                const response = await fetch('/api/discussion-groups');
+                const data = await response.json();
+                
+                updateStatistics(data);
+                renderDiscussionGroups(data.groups || []);
+                updateLastUpdateTime();
+                
+            } catch (error) {
+                console.error('获取讨论组数据失败:', error);
+                showError('获取数据失败: ' + error.message);
+            }
+        }
+
+        // 更新统计信息
+        function updateStatistics(data) {
+            const groups = data.groups || [];
+            const totalGroups = groups.length;
+            const activeGroups = groups.filter(g => g.status === 'active').length;
+            const completedGroups = groups.filter(g => g.status === 'completed').length;
+            const adkStandardGroups = groups.filter(g => g.session_type && g.session_type.startsWith('ADK_Standard_')).length;
+
+            document.getElementById('total-groups').textContent = totalGroups;
+            document.getElementById('active-groups').textContent = activeGroups;
+            document.getElementById('completed-groups').textContent = completedGroups;
+            document.getElementById('adk-standard-groups').textContent = adkStandardGroups;
+        }
+
+        // 渲染讨论组列表
+        function renderDiscussionGroups(groups) {
+            const container = document.getElementById('discussion-groups-container');
+            
+            if (groups.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="material-icons">groups</div>
+                        <h3>暂无活跃讨论组</h3>
+                        <p>当前没有正在进行的讨论组</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const groupsHtml = groups.map(group => createGroupCard(group)).join('');
+            container.innerHTML = `<div class="discussion-groups-grid">${groupsHtml}</div>`;
+        }
+
+        // 创建讨论组卡片
+        function createGroupCard(group) {
+            const statusClass = `status-${group.status || 'active'}`;
+            const statusText = getStatusText(group.status);
+            const participants = group.participants || [];
+            const leader = group.leader || 'N/A';
+            
+            // 计算进度
+            const currentRound = group.coordination_rounds || 0;
+            const maxRounds = group.max_rounds || 5;
+            const progress = maxRounds > 0 ? (currentRound / maxRounds) * 100 : 0;
+
+            return `
+                <div class="discussion-group-card">
+                    <div class="group-header">
+                        <div class="group-title">${group.group_id}</div>
+                        <div class="status-indicator ${statusClass}">
+                            <span class="material-icons">${getStatusIcon(group.status)}</span>
+                            ${statusText}
+                        </div>
+                    </div>
+                    
+                    <div class="group-info">
+                        <div class="info-row">
+                            <span class="info-label">类型:</span>
+                            <span>${group.session_type || 'Unknown'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">目标/任务:</span>
+                            <span>${group.target_id || group.missile_id || 'N/A'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">组长:</span>
+                            <span class="participant-tag leader-tag">${leader}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">参与者:</span>
+                            <span>${participants.length}个</span>
+                        </div>
+                        <div class="participants-list">
+                            ${participants.map(p => `<span class="participant-tag">${p}</span>`).join('')}
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">创建时间:</span>
+                            <span>${formatTime(group.created_time)}</span>
+                        </div>
+                    </div>
+
+                    <div class="progress-section">
+                        <div class="info-row">
+                            <span class="info-label">进度:</span>
+                            <span>${currentRound}/${maxRounds} 轮</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${progress}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="group-actions">
+                        <button class="btn btn-primary" onclick="viewGroupDetails('${group.group_id}')">
+                            <span class="material-icons">visibility</span>
+                            查看详情
+                        </button>
+                        ${group.status === 'active' ? `
+                            <button class="btn btn-warning" onclick="monitorGroup('${group.group_id}')">
+                                <span class="material-icons">monitor</span>
+                                实时监控
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        // 获取状态文本
+        function getStatusText(status) {
+            const statusMap = {
+                'active': '进行中',
+                'completed': '已完成',
+                'failed': '失败',
+                'timeout': '超时',
+                'max_rounds_reached': '达到最大轮数'
+            };
+            return statusMap[status] || '未知';
+        }
+
+        // 获取状态图标
+        function getStatusIcon(status) {
+            const iconMap = {
+                'active': 'play_circle',
+                'completed': 'check_circle',
+                'failed': 'error',
+                'timeout': 'schedule',
+                'max_rounds_reached': 'stop_circle'
+            };
+            return iconMap[status] || 'help';
+        }
+
+        // 格式化时间
+        function formatTime(timeStr) {
+            if (!timeStr) return 'N/A';
+            try {
+                const date = new Date(timeStr);
+                return date.toLocaleString('zh-CN');
+            } catch (e) {
+                return timeStr;
+            }
+        }
+
+        // 查看讨论组详情
+        function viewGroupDetails(groupId) {
+            // 这里可以打开详情模态框或跳转到详情页面
+            alert(`查看讨论组详情: ${groupId}`);
+        }
+
+        // 监控讨论组
+        function monitorGroup(groupId) {
+            alert(`开始监控讨论组: ${groupId}`);
+        }
+
+        // 开始自动刷新
+        function startAutoRefresh() {
+            if (isAutoRefreshing) return;
+            
+            isAutoRefreshing = true;
+            autoRefreshInterval = setInterval(refreshData, 5000); // 每5秒刷新
+            
+            document.getElementById('auto-refresh-status').textContent = '自动刷新中 (5s)';
+        }
+
+        // 停止自动刷新
+        function stopAutoRefresh() {
+            if (!isAutoRefreshing) return;
+            
+            isAutoRefreshing = false;
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+            
+            document.getElementById('auto-refresh-status').textContent = '手动刷新';
+        }
+
+        // 更新最后更新时间
+        function updateLastUpdateTime() {
+            const now = new Date();
+            document.getElementById('last-update').textContent = 
+                `最后更新: ${now.toLocaleString('zh-CN')}`;
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            const container = document.getElementById('discussion-groups-container');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="material-icons" style="color: var(--adk-error);">error</div>
+                    <h3>加载失败</h3>
+                    <p>${message}</p>
+                    <button class="btn btn-primary" onclick="refreshData()">重试</button>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

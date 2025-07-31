@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ADK Development UI - Multi-Agent System{% endblock %}</title>
+
+    <!-- Google Fonts - Official ADK Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;600;700&family=Roboto+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+
+    <!-- Material Design Icons - Official ADK Icons -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <style>
+        /* ADK Official Color Palette */
+        :root {
+            --adk-primary: #1a73e8;
+            --adk-primary-dark: #1557b0;
+            --adk-secondary: #34a853;
+            --adk-warning: #fbbc04;
+            --adk-danger: #ea4335;
+            --adk-surface: #ffffff;
+            --adk-background: #f8f9fa;
+            --adk-on-surface: #202124;
+            --adk-on-surface-variant: #5f6368;
+            --adk-outline: #dadce0;
+            --adk-outline-variant: #e8eaed;
+            --adk-shadow: rgba(60, 64, 67, 0.3);
+            --adk-elevation-1: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 1px 3px 1px rgba(60, 64, 67, 0.15);
+            --adk-elevation-2: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
+            --adk-elevation-3: 0 4px 8px 3px rgba(60, 64, 67, 0.15), 0 1px 3px rgba(60, 64, 67, 0.3);
+        }
+
+        /* ADK Official Typography */
+        body {
+            font-family: 'Google Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--adk-background);
+            color: var(--adk-on-surface);
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+        }
+
+        .adk-mono {
+            font-family: 'Roboto Mono', 'Courier New', monospace;
+        }
+
+        /* ADK Header - Official Design */
+        .adk-header {
+            background-color: var(--adk-surface);
+            border-bottom: 1px solid var(--adk-outline-variant);
+            height: 64px;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            box-shadow: var(--adk-elevation-1);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .adk-logo {
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+            color: var(--adk-on-surface);
+            font-weight: 500;
+            font-size: 20px;
+        }
+
+        .adk-logo-icon {
+            width: 32px;
+            height: 32px;
+            margin-right: 12px;
+            background: linear-gradient(135deg, var(--adk-primary), var(--adk-secondary));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .adk-header-actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        /* ADK Navigation - Official Design */
+        .adk-nav {
+            background-color: var(--adk-surface);
+            width: 280px;
+            height: calc(100vh - 64px);
+            border-right: 1px solid var(--adk-outline-variant);
+            padding: 24px 0;
+            overflow-y: auto;
+            position: fixed;
+            left: 0;
+            top: 64px;
+        }
+
+        .adk-nav-section {
+            margin-bottom: 32px;
+        }
+
+        .adk-nav-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--adk-on-surface-variant);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 0 24px 8px;
+            margin-bottom: 8px;
+        }
+
+        .adk-nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 24px;
+            color: var(--adk-on-surface);
+            text-decoration: none;
+            transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+            border-radius: 0;
+            margin: 0 12px;
+            border-radius: 8px;
+        }
+
+        .adk-nav-item:hover {
+            background-color: rgba(26, 115, 232, 0.08);
+            color: var(--adk-primary);
+        }
+
+        .adk-nav-item.active {
+            background-color: rgba(26, 115, 232, 0.12);
+            color: var(--adk-primary);
+            font-weight: 500;
+        }
+
+        .adk-nav-icon {
+            margin-right: 12px;
+            font-size: 20px;
+        }
+
+        /* ADK Main Content */
+        .adk-main {
+            margin-left: 280px;
+            padding: 24px;
+            min-height: calc(100vh - 64px);
+        }
+
+        /* ADK Cards - Official Design */
+        .adk-card {
+            background-color: var(--adk-surface);
+            border-radius: 12px;
+            box-shadow: var(--adk-elevation-1);
+            border: 1px solid var(--adk-outline-variant);
+            overflow: hidden;
+            transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+        }
+
+        .adk-card:hover {
+            box-shadow: var(--adk-elevation-2);
+        }
+
+        .adk-card-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--adk-outline-variant);
+            background-color: var(--adk-surface);
+        }
+
+        .adk-card-title {
+            font-size: 18px;
+            font-weight: 500;
+            margin: 0;
+            color: var(--adk-on-surface);
+        }
+
+        .adk-card-content {
+            padding: 24px;
+        }
+
+        /* ADK Buttons - Official Design */
+        .adk-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 24px;
+            border-radius: 20px;
+            font-family: 'Google Sans', sans-serif;
+            font-weight: 500;
+            font-size: 14px;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+            min-height: 40px;
+            gap: 8px;
+        }
+
+        .adk-btn-primary {
+            background-color: var(--adk-primary);
+            color: white;
+        }
+
+        .adk-btn-primary:hover {
+            background-color: var(--adk-primary-dark);
+            box-shadow: var(--adk-elevation-2);
+        }
+
+        .adk-btn-secondary {
+            background-color: transparent;
+            color: var(--adk-primary);
+            border: 1px solid var(--adk-outline);
+        }
+
+        .adk-btn-secondary:hover {
+            background-color: rgba(26, 115, 232, 0.08);
+        }
+
+        /* ADK Status Indicators */
+        .adk-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .adk-status-active {
+            background-color: rgba(52, 168, 83, 0.12);
+            color: var(--adk-secondary);
+        }
+
+        .adk-status-idle {
+            background-color: rgba(251, 188, 4, 0.12);
+            color: var(--adk-warning);
+        }
+
+        .adk-status-error {
+            background-color: rgba(234, 67, 53, 0.12);
+            color: var(--adk-danger);
+        }
+
+        .adk-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+        }
+
+
+
+
+
+        /* 主内容区域 */
+        .adk-main {
+            margin-left: 280px;
+            padding: 24px;
+            min-height: calc(100vh - 64px);
+        }
+    </style>
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- ADK Header - Official Design -->
+    <header class="adk-header">
+        <a href="/" class="adk-logo">
+            <div class="adk-logo-icon">
+                <span class="material-icons">psychology</span>
+            </div>
+            ADK Development UI
+        </a>
+
+        <div class="adk-header-actions">
+            <div class="adk-status" id="system-status-indicator">
+                <div class="adk-status-dot"></div>
+                <span id="system-status-text">Initializing</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- ADK Navigation - Official Design -->
+    <nav class="adk-nav">
+        <div class="adk-nav-section">
+            <div class="adk-nav-title">Overview</div>
+            <a href="/" class="adk-nav-item" data-page="overview">
+                <span class="material-icons adk-nav-icon">dashboard</span>
+                Dashboard
+            </a>
+        </div>
+
+        <div class="adk-nav-section">
+            <div class="adk-nav-title">Development</div>
+            <a href="/agents" class="adk-nav-item" data-page="agents">
+                <span class="material-icons adk-nav-icon">smart_toy</span>
+                Agents
+            </a>
+            <a href="/sessions" class="adk-nav-item" data-page="sessions">
+                <span class="material-icons adk-nav-icon">chat</span>
+                Sessions
+            </a>
+            <a href="/tools" class="adk-nav-item" data-page="tools">
+                <span class="material-icons adk-nav-icon">build</span>
+                Tools
+            </a>
+        </div>
+
+        <div class="adk-nav-section">
+            <div class="adk-nav-title">Configuration</div>
+            <a href="/config" class="adk-nav-item" data-page="config">
+                <span class="material-icons adk-nav-icon">settings</span>
+                Configuration
+            </a>
+            <a href="/logs" class="adk-nav-item" data-page="logs">
+                <span class="material-icons adk-nav-icon">article</span>
+                Logs
+            </a>
+            <a href="/gantt_charts" class="adk-nav-item" data-page="gantt_charts">
+                <span class="material-icons adk-nav-icon">timeline</span>
+                Gantt Charts
+            </a>
+        </div>
+
+        <div class="adk-nav-section">
+            <div class="adk-nav-title">System Control</div>
+            <button class="adk-btn adk-btn-primary" style="margin: 8px 12px; width: calc(100% - 24px);" onclick="startSystem()">
+                <span class="material-icons">play_arrow</span>
+                Start System
+            </button>
+            <button class="adk-btn adk-btn-secondary" style="margin: 8px 12px; width: calc(100% - 24px);" onclick="stopSystem()">
+                <span class="material-icons">stop</span>
+                Stop System
+            </button>
+        </div>
+    </nav>
+
+    <!-- ADK Main Content -->
+    <main class="adk-main">
+        {% block content %}{% endblock %}
+    </main>
+
+
+    
+    <script>
+        // ADK Development UI - Official JavaScript Implementation
+
+        // Socket.IO Connection Management
+        const socket = io();
+
+        // Connection Status Handling
+        socket.on('connect', function() {
+            console.log('Connected to ADK Development Server');
+            updateSystemStatus('active', 'Connected');
+        });
+
+        socket.on('disconnect', function() {
+            console.log('Disconnected from ADK Development Server');
+            updateSystemStatus('error', 'Disconnected');
+        });
+
+        // System Status Management - ADK Style
+        function updateSystemStatus(status, text) {
+            const statusIndicator = document.getElementById('system-status-indicator');
+            const statusText = document.getElementById('system-status-text');
+
+            // Remove existing status classes
+            statusIndicator.className = statusIndicator.className.replace(/adk-status-\w+/g, '');
+            statusIndicator.classList.add('adk-status', `adk-status-${status}`);
+            statusText.textContent = text;
+        }
+
+        // System Control Functions
+        function startSystem() {
+            updateSystemStatus('idle', 'Starting...');
+
+            fetch('/api/system/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    config_path: 'config/config.yaml',
+                    output_dir: 'output'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('success', 'System Started', data.message);
+                    updateSystemStatus('active', 'Running');
+                } else {
+                    showNotification('error', 'Start Failed', data.error);
+                    updateSystemStatus('error', 'Failed');
+                }
+            })
+            .catch(error => {
+                showNotification('error', 'Start Failed', error.toString());
+                updateSystemStatus('error', 'Error');
+            });
+        }
+
+        function stopSystem() {
+            updateSystemStatus('idle', 'Stopping...');
+
+            fetch('/api/system/stop', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('success', 'System Stopped', data.message);
+                    updateSystemStatus('idle', 'Stopped');
+                } else {
+                    showNotification('error', 'Stop Failed', data.error);
+                }
+            })
+            .catch(error => {
+                showNotification('error', 'Stop Failed', error.toString());
+            });
+        }
+
+        // ADK Style Notification System
+        function showNotification(type, title, message) {
+            const notification = document.createElement('div');
+            notification.className = `adk-notification adk-notification-${type}`;
+            notification.innerHTML = `
+                <div class="adk-notification-content">
+                    <div class="adk-notification-title">${title}</div>
+                    <div class="adk-notification-message">${message}</div>
+                </div>
+                <button class="adk-notification-close" onclick="this.parentElement.remove()">
+                    <span class="material-icons">close</span>
+                </button>
+            `;
+
+            // Add notification styles if not already present
+            if (!document.querySelector('#adk-notification-styles')) {
+                const styles = document.createElement('style');
+                styles.id = 'adk-notification-styles';
+                styles.textContent = `
+                    .adk-notification {
+                        position: fixed;
+                        top: 80px;
+                        right: 24px;
+                        background: var(--adk-surface);
+                        border-radius: 8px;
+                        box-shadow: var(--adk-elevation-3);
+                        padding: 16px;
+                        max-width: 400px;
+                        z-index: 1001;
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 12px;
+                        border-left: 4px solid var(--adk-primary);
+                        animation: slideIn 0.3s ease-out;
+                    }
+                    .adk-notification-success { border-left-color: var(--adk-secondary); }
+                    .adk-notification-error { border-left-color: var(--adk-danger); }
+                    .adk-notification-title {
+                        font-weight: 500;
+                        font-size: 14px;
+                        margin-bottom: 4px;
+                    }
+                    .adk-notification-message {
+                        font-size: 13px;
+                        color: var(--adk-on-surface-variant);
+                    }
+                    .adk-notification-close {
+                        background: none;
+                        border: none;
+                        cursor: pointer;
+                        color: var(--adk-on-surface-variant);
+                        padding: 0;
+                        margin-left: auto;
+                    }
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                `;
+                document.head.appendChild(styles);
+            }
+
+            document.body.appendChild(notification);
+
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+
+        // Navigation Management - ADK Style
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentPath = window.location.pathname;
+            const navItems = document.querySelectorAll('.adk-nav-item');
+
+            navItems.forEach(item => {
+                if (item.getAttribute('href') === currentPath) {
+                    item.classList.add('active');
+                }
+            });
+
+            // Initialize system status
+            updateSystemStatus('idle', 'Ready');
+        });
+
+        // Utility Functions for ADK UI Components
+        function createAdkCard(title, content) {
+            return `
+                <div class="adk-card">
+                    <div class="adk-card-header">
+                        <h3 class="adk-card-title">${title}</h3>
+                    </div>
+                    <div class="adk-card-content">
+                        ${content}
+                    </div>
+                </div>
+            `;
+        }
+
+        function createAdkButton(text, icon, type = 'primary', onclick = '') {
+            return `
+                <button class="adk-btn adk-btn-${type}" onclick="${onclick}">
+                    <span class="material-icons">${icon}</span>
+                    ${text}
+                </button>
+            `;
+        }
+
+
+
+        // 监听系统日志
+        socket.on('new_log', function(data) {
+            let type = 'system';
+            let source = 'System';
+
+            // 更精确的日志分类
+            if (data.message.includes('LLM') || data.message.includes('响应生成') || data.message.includes('🤖')) {
+                type = 'llm';
+                source = 'LLM Engine';
+            } else if (data.message.includes('智能体') || data.message.includes('Agent') || data.message.includes('🛰️')) {
+                type = 'agent';
+                source = 'Agent System';
+            } else if (data.message.includes('任务规划') || data.message.includes('📋') || data.message.includes('滚动规划')) {
+                type = 'planning';
+                source = 'Task Planner';
+            } else if (data.message.includes('用户') || data.message.includes('👤') || data.message.includes('User →')) {
+                type = 'user';
+                source = 'User Input';
+            } else if (data.level === 'error' || data.message.includes('❌') || data.message.includes('失败')) {
+                type = 'error';
+                source = 'Error';
+            } else if (data.message.includes('🚀') || data.message.includes('启动')) {
+                type = 'system';
+                source = 'System Startup';
+            } else if (data.message.includes('✅') || data.message.includes('成功')) {
+                type = 'system';
+                source = 'System Success';
+            }
+
+            // 日志已移除，保留控制台输出
+            console.log('[System Log]', data.message);
+        });
+
+        // 监听智能体响应
+        socket.on('agent_response', function(data) {
+            if (data.error) {
+                console.log('[Agent Error]', data.agent_id, data.error);
+            } else {
+                let message = data.response;
+                let source = `Agent ${data.agent_id}`;
+
+                // 如果是部分响应，添加标识
+                if (data.partial) {
+                    source += ` (Part ${data.response_count || 'N/A'})`;
+                    message = `📝 Partial Response:\n${message}`;
+                } else {
+                    // 完整响应，添加统计信息
+                    if (data.total_responses && data.total_length) {
+                        source += ` (Complete)`;
+                        message = `✅ Final Response (${data.total_responses} parts, ${data.total_length} chars):\n${message}`;
+                    }
+                }
+
+                console.log('[Agent Response]', data.agent_id, data.response);
+            }
+        });
+
+        // 监听LLM响应（增强版）
+        socket.on('llm_response', function(data) {
+            let message = `🤖 Model: ${data.model} (${data.provider})\n`;
+            message += `📊 Tokens: ${data.tokens}\n`;
+            if (data.agent_id && data.agent_id !== 'unknown') {
+                message += `🎯 Agent: ${data.agent_id}\n`;
+            }
+            message += `💬 Response:\n${data.response}`;
+
+            console.log('[LLM Response]', data.provider, data.model, data.response);
+        });
+
+        // 监听任务规划状态（增强版）
+        socket.on('planning_status', function(data) {
+            let message = `📋 Phase: ${data.phase}\n`;
+            message += `⚡ Step: ${data.step}\n`;
+            message += `📝 Description: ${data.description}`;
+
+            // 根据阶段使用不同的图标
+            let icon = '📋';
+            if (data.phase === 'Initialization') icon = '🚀';
+            else if (data.phase === 'Execution') icon = '⚡';
+            else if (data.phase === 'Completion') icon = '✅';
+            else if (data.phase === 'Error') icon = '❌';
+
+            console.log('[Planning Status]', data.phase, data.step, data.description);
+        });
+    </script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

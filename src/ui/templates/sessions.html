@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+
+{% block title %}ADK开发UI - 会话管理{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-comments me-2"></i>
+                会话管理
+            </h1>
+            <button class="btn btn-primary" onclick="createNewSession()">
+                <i class="fas fa-plus me-1"></i>
+                新建会话
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 会话统计 -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-comments fa-2x text-primary mb-2"></i>
+                <h5 class="card-title">总会话数</h5>
+                <p class="card-text">
+                    <span class="h4" id="total-sessions">0</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-play fa-2x text-success mb-2"></i>
+                <h5 class="card-title">活跃会话</h5>
+                <p class="card-text">
+                    <span class="h4" id="active-sessions">0</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-pause fa-2x text-warning mb-2"></i>
+                <h5 class="card-title">暂停会话</h5>
+                <p class="card-text">
+                    <span class="h4" id="paused-sessions">0</span>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <i class="fas fa-stop fa-2x text-danger mb-2"></i>
+                <h5 class="card-title">已结束</h5>
+                <p class="card-text">
+                    <span class="h4" id="ended-sessions">0</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 会话列表 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-list me-2"></i>
+                    会话列表
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>会话ID</th>
+                                <th>用户ID</th>
+                                <th>状态</th>
+                                <th>创建时间</th>
+                                <th>最后活动</th>
+                                <th>消息数</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sessions-table-body">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">
+                                    <i class="fas fa-spinner fa-spin me-2"></i>
+                                    加载会话列表...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 会话详情模态框 -->
+<div class="modal fade" id="sessionModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-comments me-2"></i>
+                    会话详情
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">会话信息</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="session-info">
+                                    <!-- 会话信息内容 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">消息历史</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="message-history" style="max-height: 400px; overflow-y: auto;">
+                                    <!-- 消息历史内容 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-warning" onclick="pauseSession()">
+                    <i class="fas fa-pause me-1"></i>
+                    暂停
+                </button>
+                <button type="button" class="btn btn-danger" onclick="endSession()">
+                    <i class="fas fa-stop me-1"></i>
+                    结束
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 新建会话模态框 -->
+<div class="modal fade" id="newSessionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-plus me-2"></i>
+                    新建会话
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="new-session-form">
+                    <div class="mb-3">
+                        <label for="session-user-id" class="form-label">用户ID</label>
+                        <input type="text" class="form-control" id="session-user-id" 
+                               value="user" placeholder="输入用户ID">
+                    </div>
+                    <div class="mb-3">
+                        <label for="session-description" class="form-label">会话描述</label>
+                        <textarea class="form-control" id="session-description" rows="3" 
+                                placeholder="输入会话描述（可选）"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="initial-message" class="form-label">初始消息</label>
+                        <textarea class="form-control" id="initial-message" rows="3" 
+                                placeholder="输入初始消息"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitNewSession()">
+                    <i class="fas fa-plus me-1"></i>
+                    创建会话
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .session-status-active { color: var(--adk-secondary); }
+    .session-status-paused { color: var(--adk-warning); }
+    .session-status-ended { color: var(--adk-danger); }
+    
+    .message-item {
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 8px;
+        border-left: 4px solid #ddd;
+    }
+    
+    .message-user {
+        background-color: #e3f2fd;
+        border-left-color: var(--adk-primary);
+    }
+    
+    .message-agent {
+        background-color: #e8f5e8;
+        border-left-color: var(--adk-secondary);
+    }
+    
+    .message-system {
+        background-color: #fff3e0;
+        border-left-color: var(--adk-warning);
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentSessionId = null;
+    
+    // 模拟会话数据（实际应该从后端获取）
+    const mockSessions = [
+        {
+            id: 'session_20250127_012345',
+            user_id: 'user',
+            status: 'active',
+            created_at: '2025-01-27T01:23:45Z',
+            last_activity: '2025-01-27T01:25:30Z',
+            message_count: 5,
+            description: '多智能体协同任务规划'
+        },
+        {
+            id: 'session_20250127_010000',
+            user_id: 'admin',
+            status: 'ended',
+            created_at: '2025-01-27T01:00:00Z',
+            last_activity: '2025-01-27T01:15:00Z',
+            message_count: 12,
+            description: '系统测试会话'
+        }
+    ];
+    
+    // 页面加载时获取会话列表
+    document.addEventListener('DOMContentLoaded', function() {
+        loadSessions();
+    });
+    
+    // 加载会话列表
+    function loadSessions() {
+        // 这里应该从后端API获取会话列表
+        // 目前使用模拟数据
+        displaySessions(mockSessions);
+        updateSessionCounts(mockSessions);
+    }
+    
+    // 显示会话列表
+    function displaySessions(sessions) {
+        const tbody = document.getElementById('sessions-table-body');
+        
+        if (sessions.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center text-muted">暂无会话</td>
+                </tr>
+            `;
+            return;
+        }
+        
+        let html = '';
+        sessions.forEach(session => {
+            const statusClass = `session-status-${session.status}`;
+            const statusText = getStatusText(session.status);
+            
+            html += `
+                <tr>
+                    <td><code>${session.id}</code></td>
+                    <td>${session.user_id}</td>
+                    <td>
+                        <span class="badge bg-secondary ${statusClass}">
+                            ${statusText}
+                        </span>
+                    </td>
+                    <td>${new Date(session.created_at).toLocaleString()}</td>
+                    <td>${new Date(session.last_activity).toLocaleString()}</td>
+                    <td>${session.message_count}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary" 
+                                onclick="showSessionDetails('${session.id}')">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" 
+                                onclick="deleteSession('${session.id}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html;
+    }
+    
+    // 更新会话统计
+    function updateSessionCounts(sessions) {
+        let total = sessions.length;
+        let active = sessions.filter(s => s.status === 'active').length;
+        let paused = sessions.filter(s => s.status === 'paused').length;
+        let ended = sessions.filter(s => s.status === 'ended').length;
+        
+        document.getElementById('total-sessions').textContent = total;
+        document.getElementById('active-sessions').textContent = active;
+        document.getElementById('paused-sessions').textContent = paused;
+        document.getElementById('ended-sessions').textContent = ended;
+    }
+    
+    // 获取状态文本
+    function getStatusText(status) {
+        switch (status) {
+            case 'active': return '活跃';
+            case 'paused': return '暂停';
+            case 'ended': return '已结束';
+            default: return status;
+        }
+    }
+    
+    // 显示会话详情
+    function showSessionDetails(sessionId) {
+        currentSessionId = sessionId;
+        const session = mockSessions.find(s => s.id === sessionId);
+        
+        if (!session) {
+            showAlert('danger', '会话未找到');
+            return;
+        }
+        
+        // 显示会话信息
+        document.getElementById('session-info').innerHTML = `
+            <table class="table table-sm">
+                <tr><td><strong>会话ID:</strong></td><td><code>${session.id}</code></td></tr>
+                <tr><td><strong>用户ID:</strong></td><td>${session.user_id}</td></tr>
+                <tr><td><strong>状态:</strong></td><td>
+                    <span class="badge bg-secondary session-status-${session.status}">
+                        ${getStatusText(session.status)}
+                    </span>
+                </td></tr>
+                <tr><td><strong>创建时间:</strong></td><td>${new Date(session.created_at).toLocaleString()}</td></tr>
+                <tr><td><strong>最后活动:</strong></td><td>${new Date(session.last_activity).toLocaleString()}</td></tr>
+                <tr><td><strong>消息数:</strong></td><td>${session.message_count}</td></tr>
+            </table>
+        `;
+        
+        // 显示消息历史（模拟数据）
+        const mockMessages = [
+            { type: 'user', content: '启动多智能体协同任务规划', timestamp: session.created_at },
+            { type: 'system', content: '系统初始化完成', timestamp: session.created_at },
+            { type: 'agent', content: '仿真调度智能体已启动', timestamp: session.created_at },
+            { type: 'agent', content: '开始第1轮规划', timestamp: session.last_activity },
+            { type: 'system', content: '规划完成，生成甘特图', timestamp: session.last_activity }
+        ];
+        
+        let messagesHtml = '';
+        mockMessages.forEach(msg => {
+            messagesHtml += `
+                <div class="message-item message-${msg.type}">
+                    <div class="d-flex justify-content-between">
+                        <strong>${msg.type.toUpperCase()}</strong>
+                        <small class="text-muted">${new Date(msg.timestamp).toLocaleString()}</small>
+                    </div>
+                    <div class="mt-1">${msg.content}</div>
+                </div>
+            `;
+        });
+        
+        document.getElementById('message-history').innerHTML = messagesHtml;
+        
+        const modal = new bootstrap.Modal(document.getElementById('sessionModal'));
+        modal.show();
+    }
+    
+    // 创建新会话
+    function createNewSession() {
+        const modal = new bootstrap.Modal(document.getElementById('newSessionModal'));
+        modal.show();
+        
+        // 清空表单
+        document.getElementById('session-user-id').value = 'user';
+        document.getElementById('session-description').value = '';
+        document.getElementById('initial-message').value = '';
+    }
+    
+    // 提交新会话
+    function submitNewSession() {
+        const userId = document.getElementById('session-user-id').value.trim();
+        const description = document.getElementById('session-description').value.trim();
+        const initialMessage = document.getElementById('initial-message').value.trim();
+        
+        if (!userId || !initialMessage) {
+            showAlert('warning', '请填写用户ID和初始消息');
+            return;
+        }
+        
+        // 这里应该调用后端API创建会话
+        // 目前只是模拟
+        const newSession = {
+            id: `session_${new Date().toISOString().replace(/[:.]/g, '').slice(0, 15)}`,
+            user_id: userId,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            last_activity: new Date().toISOString(),
+            message_count: 1,
+            description: description || '新会话'
+        };
+        
+        mockSessions.unshift(newSession);
+        loadSessions();
+        
+        bootstrap.Modal.getInstance(document.getElementById('newSessionModal')).hide();
+        showAlert('success', '会话创建成功');
+    }
+    
+    // 暂停会话
+    function pauseSession() {
+        if (!currentSessionId) return;
+        
+        // 这里应该调用后端API暂停会话
+        showAlert('info', '会话暂停功能正在开发中...');
+    }
+    
+    // 结束会话
+    function endSession() {
+        if (!currentSessionId) return;
+        
+        if (confirm('确定要结束这个会话吗？')) {
+            // 这里应该调用后端API结束会话
+            const session = mockSessions.find(s => s.id === currentSessionId);
+            if (session) {
+                session.status = 'ended';
+                loadSessions();
+                bootstrap.Modal.getInstance(document.getElementById('sessionModal')).hide();
+                showAlert('success', '会话已结束');
+            }
+        }
+    }
+    
+    // 删除会话
+    function deleteSession(sessionId) {
+        if (confirm('确定要删除这个会话吗？此操作不可撤销。')) {
+            // 这里应该调用后端API删除会话
+            const index = mockSessions.findIndex(s => s.id === sessionId);
+            if (index !== -1) {
+                mockSessions.splice(index, 1);
+                loadSessions();
+                showAlert('success', '会话已删除');
+            }
+        }
+    }
+</script>
+{% endblock %}
