@@ -356,53 +356,138 @@ class ADKMonitoringUI:
             return 0
     
     def _get_discussion_groups_status(self) -> Dict[str, Any]:
-        """获取讨论组状态"""
+        """获取讨论组状态（包括传统讨论组和ADK讨论组）"""
         try:
-            if not self.discussion_group_manager:
-                return {'groups': {}, 'total_count': 0}
-            
-            current_group = self.discussion_group_manager.get_current_discussion_group()
-            completed_groups = self.discussion_group_manager.get_completed_groups_summary()
-            
             groups_status = {}
-            
-            # 当前活跃讨论组
-            if current_group:
-                groups_status[current_group.group_id] = {
-                    'group_id': current_group.group_id,
-                    'task_id': current_group.task.task_id,
-                    'leader_satellite': current_group.leader_satellite.satellite_id,
-                    'member_satellites': [sat.satellite_id for sat in current_group.member_satellites],
-                    'status': 'active',
-                    'consensus_reached': current_group.consensus_reached,
-                    'created_at': datetime.now().isoformat()  # 简化
-                }
-            
-            # 已完成的讨论组摘要
-            for summary in completed_groups[-5:]:  # 只显示最近5个
-                # 确保summary是字典类型
-                if not isinstance(summary, dict):
-                    logger.warning(f"⚠️ 讨论组摘要不是字典类型: {type(summary)}")
-                    continue
+            active_count = 0
+            completed_count = 0
 
-                groups_status[summary.get('group_id', 'unknown')] = {
-                    'group_id': summary.get('group_id', 'unknown'),
-                    'task_id': summary.get('task_id', 'unknown'),
-                    'leader_satellite': summary.get('leader_satellite', 'unknown'),
-                    'member_satellites': summary.get('member_satellites', []),
-                    'status': 'completed',
-                    'consensus_reached': summary.get('consensus_reached', False),
-                    'created_at': summary.get('created_at', ''),
-                    'closed_at': summary.get('closed_at', '')
-                }
-            
+            # 1. 获取传统讨论组状态
+            if self.discussion_group_manager:
+                current_group = self.discussion_group_manager.get_current_discussion_group()
+                completed_groups = self.discussion_group_manager.get_completed_groups_summary()
+
+                # 当前活跃讨论组
+                if current_group:
+                    groups_status[current_group.group_id] = {
+                        'group_id': current_group.group_id,
+                        'task_id': current_group.task.task_id,
+                        'leader_satellite': current_group.leader_satellite.satellite_id,
+                        'member_satellites': [sat.satellite_id for sat in current_group.member_satellites],
+                        'status': 'active',
+                        'type': 'traditional',
+                        'consensus_reached': current_group.consensus_reached,
+                        'created_at': datetime.now().isoformat()  # 简化
+                    }
+                    active_count += 1
+
+                # 已完成的传统讨论组摘要
+                for summary in completed_groups[-5:]:  # 只显示最近5个
+                    if not isinstance(summary, dict):
+                        logger.warning(f"⚠️ 讨论组摘要不是字典类型: {type(summary)}")
+                        continue
+
+                    groups_status[summary.get('group_id', 'unknown')] = {
+                        'group_id': summary.get('group_id', 'unknown'),
+                        'task_id': summary.get('task_id', 'unknown'),
+                        'leader_satellite': summary.get('leader_satellite', 'unknown'),
+                        'member_satellites': summary.get('member_satellites', []),
+                        'status': 'completed',
+                        'type': 'traditional',
+                        'consensus_reached': summary.get('consensus_reached', False),
+                        'created_at': summary.get('created_at', ''),
+                        'closed_at': summary.get('closed_at', '')
+                    }
+                    completed_count += 1
+
+            # 2. 获取ADK讨论组状态
+            try:
+                # 首先从Session Manager获取ADK讨论组（这是最可靠的来源）
+                from src.utils.adk_session_manager import get_adk_session_manager
+                session_manager = get_adk_session_manager()
+                adk_discussions = session_manager.get_adk_discussions()
+
+                logger.debug(f"🔍 从Session Manager获取到 {len(adk_discussions)} 个ADK讨论组")
+
+                for discussion_id, discussion_info in adk_discussions.items():
+                    status = discussion_info.get('status', 'unknown')
+                    discussion_type = discussion_info.get('type', 'unknown')
+
+                    groups_status[discussion_id] = {
+                        'group_id': discussion_id,
+                        'task_id': discussion_info.get('task_description', 'ADK任务'),
+                        'leader_satellite': 'ADK系统',
+                        'member_satellites': discussion_info.get('participants', []),
+                        'status': status,
+                        'type': f"adk_{discussion_type}",
+                        'consensus_reached': discussion_info.get('consensus_reached', False),
+                        'created_at': discussion_info.get('created_time', ''),
+                        'closed_at': discussion_info.get('completion_time', '') if status in ['completed', 'dissolved'] else ''
+                    }
+
+                    # 统计数量
+                    if status in ['completed', 'dissolved']:
+                        completed_count += 1
+                    elif status == 'active':
+                        active_count += 1
+
+                # 如果有多智能体系统引用，也检查内存中的活跃讨论组
+                if self.multi_agent_system:
+                    # 获取ADK官方讨论系统（ADK标准讨论系统已删除）
+                    try:
+                        adk_official_system = self.multi_agent_system.get_adk_official_discussion_system()
+                        if adk_official_system and hasattr(adk_official_system, '_active_discussions'):
+                            active_official_discussions = adk_official_system._active_discussions
+                            logger.debug(f"🔍 ADK官方讨论系统中有 {len(active_official_discussions)} 个活跃讨论组")
+
+                            for discussion_id, discussion_agent in active_official_discussions.items():
+                                if discussion_id not in groups_status:  # 避免重复
+                                    # 获取参与智能体信息
+                                    participating_agents = getattr(discussion_agent, '_participating_agents', [])
+                                    member_names = []
+                                    for agent in participating_agents:
+                                        if hasattr(agent, 'name'):
+                                            member_names.append(agent.name)
+                                        elif hasattr(agent, 'satellite_id'):
+                                            member_names.append(agent.satellite_id)
+                                        else:
+                                            member_names.append(str(agent))
+
+                                    # 获取创建时间
+                                    created_time = datetime.now().isoformat()
+                                    if hasattr(discussion_agent, '_created_time'):
+                                        try:
+                                            created_time = discussion_agent._created_time.isoformat() if hasattr(discussion_agent._created_time, 'isoformat') else str(discussion_agent._created_time)
+                                        except:
+                                            pass
+
+                                    groups_status[discussion_id] = {
+                                        'group_id': discussion_id,
+                                        'task_id': getattr(discussion_agent, '_task_description', 'ADK官方任务'),
+                                        'leader_satellite': 'ADK官方系统',
+                                        'member_satellites': member_names,
+                                        'status': 'active',
+                                        'type': 'adk_official',
+                                        'consensus_reached': False,
+                                        'created_at': created_time,
+                                        'participants_count': len(participating_agents)
+                                    }
+                                    active_count += 1
+                    except Exception as e:
+                        logger.warning(f"⚠️ 获取ADK官方讨论组状态失败: {e}")
+
+            except Exception as e:
+                logger.warning(f"⚠️ 获取ADK讨论组状态失败: {e}")
+                import traceback
+                logger.debug(f"详细错误信息: {traceback.format_exc()}")
+
             return {
                 'groups': groups_status,
                 'total_count': len(groups_status),
-                'active_count': 1 if current_group else 0,
-                'completed_count': len(completed_groups)
+                'active_count': active_count,
+                'completed_count': completed_count
             }
-            
+
         except Exception as e:
             logger.error(f"❌ 获取讨论组状态失败: {e}")
             return {'groups': {}, 'total_count': 0, 'error': str(e)}

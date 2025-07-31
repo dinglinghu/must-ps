@@ -40,16 +40,150 @@
                     <option value="">选择甘特图...</option>
                 </select>
             </div>
-            <div style="display: flex; align-items: end; gap: 8px;">
+            <div style="display: flex; align-items: end; gap: 8px; flex-wrap: wrap;">
                 <button id="load-gantt" class="adk-btn adk-btn-primary">
                     <span class="material-icons">refresh</span>
                     加载甘特图
+                </button>
+                <button id="save-gantt" class="adk-btn adk-btn-success" disabled>
+                    <span class="material-icons">save</span>
+                    保存
                 </button>
                 <button id="export-gantt" class="adk-btn adk-btn-secondary">
                     <span class="material-icons">download</span>
                     导出
                 </button>
+                <button id="search-gantt" class="adk-btn adk-btn-info">
+                    <span class="material-icons">search</span>
+                    搜索
+                </button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- 甘特图保存选项面板 -->
+<div id="save-options-panel" class="adk-card" style="display: none; margin-bottom: 24px;">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons">save_alt</span>
+            保存选项
+        </h2>
+    </div>
+    <div class="adk-card-content">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div>
+                <label class="adk-form-label">保存格式</label>
+                <select id="save-format" class="adk-form-input">
+                    <option value="json">JSON数据</option>
+                    <option value="png">PNG图片</option>
+                    <option value="svg">SVG矢量图</option>
+                    <option value="pdf">PDF文档</option>
+                    <option value="html">HTML网页</option>
+                </select>
+            </div>
+            <div>
+                <label class="adk-form-label">图片质量</label>
+                <select id="save-quality" class="adk-form-input">
+                    <option value="medium">中等</option>
+                    <option value="high" selected>高质量</option>
+                    <option value="ultra">超高质量</option>
+                </select>
+            </div>
+            <div>
+                <label class="adk-form-label">文件名</label>
+                <input type="text" id="save-filename" class="adk-form-input" placeholder="自动生成文件名">
+            </div>
+            <div style="display: flex; align-items: end; gap: 8px;">
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <input type="checkbox" id="save-compress" class="adk-checkbox">
+                    <span>启用压缩</span>
+                </label>
+            </div>
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button id="confirm-save" class="adk-btn adk-btn-success">
+                <span class="material-icons">check</span>
+                确认保存
+            </button>
+            <button id="cancel-save" class="adk-btn adk-btn-outline">
+                <span class="material-icons">close</span>
+                取消
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 甘特图搜索面板 -->
+<div id="search-panel" class="adk-card" style="display: none; margin-bottom: 24px;">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons">search</span>
+            搜索甘特图
+        </h2>
+    </div>
+    <div class="adk-card-content">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+            <div>
+                <label class="adk-form-label">图表类型</label>
+                <select id="search-chart-type" class="adk-form-input">
+                    <option value="">全部类型</option>
+                    <option value="task_allocation">任务分配</option>
+                    <option value="resource_utilization">资源利用</option>
+                    <option value="mission_overview">任务概览</option>
+                    <option value="planning">规划甘特图</option>
+                    <option value="meta_task">元任务甘特图</option>
+                </select>
+            </div>
+            <div>
+                <label class="adk-form-label">文件格式</label>
+                <select id="search-format" class="adk-form-input">
+                    <option value="">全部格式</option>
+                    <option value="json">JSON</option>
+                    <option value="png">PNG</option>
+                    <option value="svg">SVG</option>
+                    <option value="pdf">PDF</option>
+                    <option value="html">HTML</option>
+                </select>
+            </div>
+            <div>
+                <label class="adk-form-label">任务ID</label>
+                <input type="text" id="search-mission-id" class="adk-form-input" placeholder="输入任务ID">
+            </div>
+            <div>
+                <label class="adk-form-label">关键词</label>
+                <input type="text" id="search-keywords" class="adk-form-input" placeholder="输入搜索关键词">
+            </div>
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 8px;">
+            <button id="execute-search" class="adk-btn adk-btn-primary">
+                <span class="material-icons">search</span>
+                搜索
+            </button>
+            <button id="clear-search" class="adk-btn adk-btn-outline">
+                <span class="material-icons">clear</span>
+                清空
+            </button>
+            <button id="close-search" class="adk-btn adk-btn-outline">
+                <span class="material-icons">close</span>
+                关闭
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 搜索结果面板 -->
+<div id="search-results-panel" class="adk-card" style="display: none; margin-bottom: 24px;">
+    <div class="adk-card-header">
+        <h2 class="adk-card-title">
+            <span class="material-icons">list</span>
+            搜索结果
+        </h2>
+        <div id="search-results-count" class="adk-badge">0 个结果</div>
+    </div>
+    <div class="adk-card-content">
+        <div id="search-results-list" style="max-height: 300px; overflow-y: auto;">
+            <!-- 搜索结果将在这里显示 -->
         </div>
     </div>
 </div>
@@ -172,10 +306,21 @@
         // 绑定事件
         document.getElementById('session-select').addEventListener('change', loadGanttFiles);
         document.getElementById('load-gantt').addEventListener('click', loadGanttChart);
+        document.getElementById('save-gantt').addEventListener('click', showSaveOptions);
         document.getElementById('export-gantt').addEventListener('click', exportGanttChart);
+        document.getElementById('search-gantt').addEventListener('click', showSearchPanel);
         document.getElementById('zoom-in').addEventListener('click', () => zoomChart(1.2));
         document.getElementById('zoom-out').addEventListener('click', () => zoomChart(0.8));
         document.getElementById('reset-zoom').addEventListener('click', resetZoom);
+
+        // 保存选项事件
+        document.getElementById('confirm-save').addEventListener('click', saveGanttChart);
+        document.getElementById('cancel-save').addEventListener('click', hideSaveOptions);
+
+        // 搜索面板事件
+        document.getElementById('execute-search').addEventListener('click', executeSearch);
+        document.getElementById('clear-search').addEventListener('click', clearSearch);
+        document.getElementById('close-search').addEventListener('click', hideSearchPanel);
     });
 
     // 加载仿真会话列表
@@ -246,12 +391,242 @@
             currentGanttData = ganttData;
             renderGanttChart(ganttData);
             updateGanttInfo(ganttData);
-            
+
+            // 启用保存按钮
+            document.getElementById('save-gantt').disabled = false;
+
         } catch (error) {
             console.error('加载甘特图失败:', error);
             alert('加载甘特图失败: ' + error.message);
         } finally {
             hideLoading();
+        }
+    }
+
+    // 显示保存选项
+    function showSaveOptions() {
+        if (!currentGanttData) {
+            alert('请先加载甘特图');
+            return;
+        }
+
+        document.getElementById('save-options-panel').style.display = 'block';
+
+        // 生成默认文件名
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[:-]/g, '');
+        const chartType = document.getElementById('chart-type').value;
+        const defaultName = `${chartType}_${timestamp}`;
+        document.getElementById('save-filename').value = defaultName;
+    }
+
+    // 隐藏保存选项
+    function hideSaveOptions() {
+        document.getElementById('save-options-panel').style.display = 'none';
+    }
+
+    // 保存甘特图
+    async function saveGanttChart() {
+        if (!currentGanttData) {
+            alert('没有可保存的甘特图数据');
+            return;
+        }
+
+        const format = document.getElementById('save-format').value;
+        const quality = document.getElementById('save-quality').value;
+        const compress = document.getElementById('save-compress').checked;
+        const filename = document.getElementById('save-filename').value;
+        const chartType = document.getElementById('chart-type').value;
+
+        showLoading();
+
+        try {
+            const response = await fetch('/api/gantt/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    gantt_data: currentGanttData,
+                    chart_type: chartType,
+                    mission_id: currentGanttData.mission_id || 'UNKNOWN',
+                    format: format,
+                    compress: compress,
+                    filename: filename,
+                    quality: quality
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert(`甘特图保存成功！\n文件路径: ${result.file_path}\n文件大小: ${(result.file_size / 1024).toFixed(2)} KB`);
+                hideSaveOptions();
+            } else {
+                alert('保存失败: ' + result.error);
+            }
+
+        } catch (error) {
+            console.error('保存甘特图失败:', error);
+            alert('保存甘特图失败: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // 显示搜索面板
+    function showSearchPanel() {
+        document.getElementById('search-panel').style.display = 'block';
+    }
+
+    // 隐藏搜索面板
+    function hideSearchPanel() {
+        document.getElementById('search-panel').style.display = 'none';
+        document.getElementById('search-results-panel').style.display = 'none';
+    }
+
+    // 执行搜索
+    async function executeSearch() {
+        const searchParams = {
+            chart_type: document.getElementById('search-chart-type').value,
+            format: document.getElementById('search-format').value,
+            mission_id: document.getElementById('search-mission-id').value,
+            keywords: document.getElementById('search-keywords').value.split(' ').filter(k => k.trim())
+        };
+
+        showLoading();
+
+        try {
+            const response = await fetch('/api/gantt/search', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(searchParams)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                displaySearchResults(result.files, result.total_count);
+            } else {
+                alert('搜索失败: ' + result.error);
+            }
+
+        } catch (error) {
+            console.error('搜索失败:', error);
+            alert('搜索失败: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // 显示搜索结果
+    function displaySearchResults(files, totalCount) {
+        const resultsPanel = document.getElementById('search-results-panel');
+        const resultsList = document.getElementById('search-results-list');
+        const resultsCount = document.getElementById('search-results-count');
+
+        resultsCount.textContent = `${totalCount} 个结果`;
+
+        if (files.length === 0) {
+            resultsList.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">未找到匹配的甘特图</div>';
+        } else {
+            resultsList.innerHTML = files.map(file => `
+                <div class="search-result-item" style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: between; align-items: start;">
+                        <div style="flex: 1;">
+                            <h4 style="margin: 0 0 8px 0; color: #333;">${file.file_name}</h4>
+                            <div style="font-size: 14px; color: #666;">
+                                <span>类型: ${file.chart_type}</span> |
+                                <span>格式: ${file.format}</span> |
+                                <span>大小: ${(file.file_size / 1024).toFixed(2)} KB</span>
+                            </div>
+                            <div style="font-size: 12px; color: #999; margin-top: 4px;">
+                                创建时间: ${new Date(file.creation_time).toLocaleString()}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="adk-btn adk-btn-sm adk-btn-primary" onclick="loadGanttFromSearch('${file.file_id}')">
+                                <span class="material-icons">open_in_new</span>
+                                加载
+                            </button>
+                            <button class="adk-btn adk-btn-sm adk-btn-secondary" onclick="exportGanttFromSearch('${file.file_id}')">
+                                <span class="material-icons">download</span>
+                                导出
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        resultsPanel.style.display = 'block';
+    }
+
+    // 清空搜索
+    function clearSearch() {
+        document.getElementById('search-chart-type').value = '';
+        document.getElementById('search-format').value = '';
+        document.getElementById('search-mission-id').value = '';
+        document.getElementById('search-keywords').value = '';
+        document.getElementById('search-results-panel').style.display = 'none';
+    }
+
+    // 从搜索结果加载甘特图
+    async function loadGanttFromSearch(fileId) {
+        showLoading();
+
+        try {
+            const response = await fetch(`/api/gantt/load/${fileId}`);
+            const result = await response.json();
+
+            if (result.success) {
+                currentGanttData = result.gantt_data;
+                renderGanttChart(result.gantt_data);
+                updateGanttInfo(result.gantt_data);
+
+                // 启用保存按钮
+                document.getElementById('save-gantt').disabled = false;
+
+                // 隐藏搜索面板
+                hideSearchPanel();
+
+                alert('甘特图加载成功！');
+            } else {
+                alert('加载失败: ' + result.error);
+            }
+
+        } catch (error) {
+            console.error('加载甘特图失败:', error);
+            alert('加载甘特图失败: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // 从搜索结果导出甘特图
+    async function exportGanttFromSearch(fileId) {
+        try {
+            const response = await fetch(`/api/gantt/export/${fileId}`);
+
+            if (response.ok) {
+                // 创建下载链接
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = response.headers.get('Content-Disposition')?.split('filename=')[1] || 'gantt_chart';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            } else {
+                alert('导出失败');
+            }
+
+        } catch (error) {
+            console.error('导出甘特图失败:', error);
+            alert('导出甘特图失败: ' + error.message);
         }
     }
 

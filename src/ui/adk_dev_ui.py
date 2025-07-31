@@ -568,6 +568,14 @@ class ADKDevUI:
             except Exception as e:
                 return jsonify({'error': str(e)})
 
+        # 注册甘特图API蓝图
+        try:
+            from src.api.gantt_api import gantt_api
+            self.app.register_blueprint(gantt_api)
+            logger.info("✅ 甘特图API已注册")
+        except ImportError as e:
+            logger.warning(f"⚠️ 甘特图API注册失败: {e}")
+
         @self.app.route('/api/simulation/sessions/<session_id>/gantt_data/<filename>')
         def get_gantt_data(session_id, filename):
             """获取甘特图数据API"""

@@ -1333,11 +1333,53 @@ class SatelliteAgent(BaseAgent):
         try:
             logger.info(f"📤 向仿真调度智能体报告任务 {task.task_id} 的结果")
 
-            # TODO: 实现向仿真调度智能体报告结果的逻辑
-            # 这里可以通过ADK的事件系统或直接调用来实现
+            # 导入任务完成通知系统
+            from src.utils.task_completion_notifier import get_task_completion_notifier, TaskCompletionResult
+
+            # 构建任务完成结果
+            completion_result = TaskCompletionResult(
+                task_id=task.task_id,
+                satellite_id=self.satellite_id,
+                discussion_id=discussion_result.get('discussion_id', 'unknown'),
+                status='completed' if discussion_result.get('success', False) else 'failed',
+                completion_time=datetime.now().isoformat(),
+                iterations_completed=discussion_result.get('total_iterations', 0),
+                quality_score=discussion_result.get('final_quality_score', 0.0),
+                discussion_result=discussion_result,
+                metadata={
+                    'target_id': task.target_id,
+                    'priority': task.priority,
+                    'start_time': task.start_time.isoformat() if task.start_time else None,
+                    'end_time': task.end_time.isoformat() if task.end_time else None,
+                    'satellite_position': getattr(self, 'current_position', None),
+                    'task_metadata': task.metadata
+                }
+            )
+
+            # 通过任务完成通知系统发送通知
+            notifier = get_task_completion_notifier()
+            await notifier.notify_task_completion(completion_result)
+
+            logger.info(f"✅ 任务结果已成功报告给仿真调度智能体: {task.task_id}")
+            logger.info(f"   状态: {completion_result.status}")
+            logger.info(f"   迭代次数: {completion_result.iterations_completed}")
+            logger.info(f"   质量分数: {completion_result.quality_score:.3f}")
 
         except Exception as e:
             logger.error(f"❌ 报告结果失败: {e}")
+
+            # 即使报告失败，也尝试发送一个基本的失败通知
+            try:
+                from src.utils.task_completion_notifier import notify_task_completed
+                await notify_task_completed(
+                    task_id=task.task_id,
+                    satellite_id=self.satellite_id,
+                    discussion_id='unknown',
+                    status='failed',
+                    metadata={'error': str(e)}
+                )
+            except Exception as e2:
+                logger.error(f"❌ 发送失败通知也失败: {e2}")
 
     def _get_discussion_config(self) -> Dict[str, Any]:
         """

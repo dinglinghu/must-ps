@@ -503,15 +503,16 @@ class MissileManager:
                     # logger.info(f"   🔍 Result类型: {type(result)}")
                     # logger.info(f"   🔍 DataSets类型: {type(result.DataSets)}")
 
-                    # 检查每个DataSet
-                    for i in range(result.DataSets.Count):
-                        try:
-                            ds = result.DataSets.Item(i)
-                            logger.info(f"   🔍 DataSet[{i}]类型: {type(ds)}")
-                            logger.info(f"   🔍 DataSet[{i}]属性: {[attr for attr in dir(ds) if not attr.startswith('_')]}")
-                        except Exception as ds_error:
-                            logger.error(f"   ❌ DataSet[{i}]检查失败: {ds_error}")
+                    # # 检查每个DataSet
+                    # for i in range(result.DataSets.Count):
+                    #     try:
+                    #         ds = result.DataSets.Item(i)
+                    #         logger.info(f"   🔍 DataSet[{i}]类型: {type(ds)}")
+                    #         logger.info(f"   🔍 DataSet[{i}]属性: {[attr for attr in dir(ds) if not attr.startswith('_')]}")
+                    #     except Exception as ds_error:
+                    #         logger.error(f"   ❌ DataSet[{i}]检查失败: {ds_error}")
 
+                    pass  # 占位符，避免空try块
                 except Exception as result_error:
                     logger.error(f"   ❌ Result结构检查失败: {result_error}")
 

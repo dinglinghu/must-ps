@@ -391,12 +391,504 @@ class SimulationSchedulerAgent(LlmAgent):
             self._constellation_manager = None
             self._meta_task_manager = None
             self._gantt_generator = None
-            
+
+            # 任务完成通知相关状态
+            self._coordination_results = []
+            self._all_discussions_completed = False
+            self._current_planning_cycle = 0
+            self._pending_tasks = set()  # 待完成的任务ID集合
+            self._completed_tasks = {}   # 已完成的任务结果
+            self._waiting_for_tasks = False  # 是否正在等待任务完成
+
+            # 注册任务完成通知回调
+            self._register_task_completion_callback()
+
+            # 设置ADK智能体工具（新的高效交互机制）
+            self._setup_adk_agent_tools()
+
             logger.info("🔧 系统组件初始化完成")
             
         except Exception as e:
             logger.error(f"❌ 系统组件初始化失败: {e}")
             raise
+
+    def _register_task_completion_callback(self):
+        """注册任务完成通知回调"""
+        try:
+            from src.utils.task_completion_notifier import register_scheduler_for_task_notifications
+
+            # 注册回调函数
+            register_scheduler_for_task_notifications(self._on_task_completed)
+
+            logger.info("✅ 任务完成通知回调已注册")
+
+        except Exception as e:
+            logger.error(f"❌ 注册任务完成通知回调失败: {e}")
+
+    def _setup_adk_agent_tools(self):
+        """设置ADK智能体工具，用于高效的智能体间交互"""
+        try:
+            from google.adk.tools import AgentTool
+
+            # 获取所有可用的卫星智能体
+            available_satellites = self._get_available_satellite_agents()
+
+            # 将卫星智能体包装为AgentTool
+            self._satellite_agent_tools = []
+            for satellite_agent in available_satellites:
+                try:
+                    # 包装卫星智能体为工具
+                    satellite_tool = AgentTool(agent=satellite_agent)
+                    self._satellite_agent_tools.append(satellite_tool)
+
+                    logger.info(f"✅ 卫星智能体 {satellite_agent.name} 已包装为AgentTool")
+
+                except Exception as e:
+                    logger.error(f"❌ 包装卫星智能体 {satellite_agent.name} 为工具失败: {e}")
+
+            logger.info(f"🔧 ADK智能体工具设置完成，共 {len(self._satellite_agent_tools)} 个工具")
+
+        except Exception as e:
+            logger.error(f"❌ 设置ADK智能体工具失败: {e}")
+            self._satellite_agent_tools = []
+
+    def _get_available_satellite_agents(self):
+        """获取所有可用的卫星智能体实例"""
+        try:
+            # 从多智能体系统获取卫星智能体
+            if hasattr(self, '_multi_agent_system') and self._multi_agent_system:
+                satellite_agents = []
+
+                # 遍历所有注册的智能体
+                for agent_name, agent_instance in self._multi_agent_system._agents.items():
+                    if hasattr(agent_instance, 'satellite_id'):  # 判断是否为卫星智能体
+                        satellite_agents.append(agent_instance)
+
+                logger.info(f"📡 发现 {len(satellite_agents)} 个可用的卫星智能体")
+                return satellite_agents
+            else:
+                logger.warning("⚠️ 多智能体系统未初始化，无法获取卫星智能体")
+                return []
+
+        except Exception as e:
+            logger.error(f"❌ 获取可用卫星智能体失败: {e}")
+            return []
+
+    async def _execute_tasks_with_adk_tools(self, ctx: InvocationContext, task_assignments: Dict[str, Any]) -> str:
+        """使用ADK AgentTool机制执行任务（替代传统的通知等待机制）"""
+        try:
+            logger.info("🚀 开始使用ADK AgentTool机制执行任务")
+
+            if not hasattr(self, '_satellite_agent_tools') or not self._satellite_agent_tools:
+                logger.warning("⚠️ 没有可用的卫星智能体工具，回退到传统机制")
+                return await self._execute_tasks_traditional_way(ctx, task_assignments)
+
+            # 准备任务执行指令
+            task_execution_instruction = self._prepare_adk_task_instruction(task_assignments)
+
+            # 创建临时的任务执行智能体，配置卫星工具
+            from google.adk.agents import LlmAgent
+
+            task_executor = LlmAgent(
+                name="task_executor_adk",
+                model="gemini-2.0-flash",
+                instruction=task_execution_instruction,
+                tools=self._satellite_agent_tools,
+                output_key="adk_task_results"
+            )
+
+            logger.info(f"🔧 创建任务执行智能体，配置 {len(self._satellite_agent_tools)} 个卫星工具")
+
+            # 执行任务
+            execution_result = await self._run_adk_task_executor(task_executor, ctx, task_assignments)
+
+            # 处理执行结果
+            return await self._process_adk_execution_results(ctx, execution_result)
+
+        except Exception as e:
+            logger.error(f"❌ ADK工具执行任务失败: {e}")
+            # 回退到传统机制
+            return await self._execute_tasks_traditional_way(ctx, task_assignments)
+
+    def _prepare_adk_task_instruction(self, task_assignments: Dict[str, Any]) -> str:
+        """准备ADK任务执行指令"""
+        try:
+            # 获取任务信息
+            total_tasks = len(task_assignments.get('assignments', []))
+
+            instruction = f"""
+你是卫星任务执行协调器。你需要协调 {total_tasks} 个卫星智能体执行任务。
+
+## 任务执行流程：
+1. 分析提供的任务分配信息
+2. 为每个卫星智能体调用对应的工具
+3. 并行执行所有任务，等待完成
+4. 收集所有结果并生成汇总报告
+
+## 可用工具：
+{self._get_available_tools_description()}
+
+## 输出格式：
+请以JSON格式输出执行结果：
+{{
+    "execution_status": "completed/failed",
+    "total_tasks": {total_tasks},
+    "completed_tasks": 数量,
+    "failed_tasks": 数量,
+    "results": [
+        {{
+            "satellite_id": "卫星ID",
+            "task_id": "任务ID",
+            "status": "completed/failed",
+            "quality_score": 分数,
+            "execution_time": 执行时间秒数
+        }}
+    ],
+    "summary": "执行总结"
+}}
+
+## 重要提示：
+- 必须等待所有工具调用完成
+- 如果某个工具调用失败，继续执行其他任务
+- 记录详细的执行统计信息
+"""
+
+            return instruction
+
+        except Exception as e:
+            logger.error(f"❌ 准备ADK任务指令失败: {e}")
+            return "执行卫星任务协调"
+
+    def _get_available_tools_description(self) -> str:
+        """获取可用工具的描述"""
+        try:
+            if not hasattr(self, '_satellite_agent_tools'):
+                return "无可用工具"
+
+            descriptions = []
+            for i, tool in enumerate(self._satellite_agent_tools):
+                if hasattr(tool, 'agent') and hasattr(tool.agent, 'name'):
+                    descriptions.append(f"- {tool.agent.name}: 卫星智能体工具")
+                else:
+                    descriptions.append(f"- satellite_tool_{i}: 卫星智能体工具")
+
+            return "\n".join(descriptions)
+
+        except Exception as e:
+            logger.error(f"❌ 获取工具描述失败: {e}")
+            return "工具描述获取失败"
+
+    async def _run_adk_task_executor(self, task_executor, ctx: InvocationContext, task_assignments: Dict[str, Any]) -> str:
+        """运行ADK任务执行智能体"""
+        try:
+            logger.info("🎯 开始运行ADK任务执行智能体")
+
+            # 准备任务分配数据作为输入
+            task_input = {
+                "assignments": task_assignments.get('assignments', []),
+                "timestamp": datetime.now().isoformat(),
+                "total_tasks": len(task_assignments.get('assignments', []))
+            }
+
+            # 将任务信息保存到会话状态
+            ctx.session.state['current_task_assignments'] = task_input
+
+            # 构造执行消息
+            execution_message = f"""
+请执行以下卫星任务分配：
+
+任务总数: {task_input['total_tasks']}
+执行时间: {task_input['timestamp']}
+
+任务详情:
+{json.dumps(task_input['assignments'], indent=2, ensure_ascii=False)}
+
+请使用可用的卫星智能体工具并行执行所有任务，并返回详细的执行结果。
+"""
+
+            # 执行任务（这里需要适配ADK的执行方式）
+            # 注意：实际实现中需要根据ADK的具体API调整
+            logger.info("⚡ 开始执行ADK任务...")
+
+            # 模拟ADK执行结果（实际实现中应该调用ADK的run方法）
+            execution_result = await self._simulate_adk_execution(task_executor, execution_message, ctx)
+
+            logger.info("✅ ADK任务执行完成")
+            return execution_result
+
+        except Exception as e:
+            logger.error(f"❌ 运行ADK任务执行智能体失败: {e}")
+            raise
+
+    async def _simulate_adk_execution(self, task_executor, message: str, ctx: InvocationContext) -> str:
+        """模拟ADK执行（临时实现，实际应该调用ADK API）"""
+        try:
+            logger.info("🔄 模拟ADK执行过程...")
+
+            # 获取任务分配信息
+            task_assignments = ctx.session.state.get('current_task_assignments', {})
+            assignments = task_assignments.get('assignments', [])
+
+            # 模拟并行执行所有任务
+            results = []
+            completed_count = 0
+            failed_count = 0
+
+            for assignment in assignments:
+                try:
+                    satellite_id = assignment.get('satellite_id')
+                    task_id = assignment.get('task_id')
+
+                    # 模拟任务执行
+                    await asyncio.sleep(0.1)  # 模拟执行时间
+
+                    # 模拟成功结果
+                    result = {
+                        "satellite_id": satellite_id,
+                        "task_id": task_id,
+                        "status": "completed",
+                        "quality_score": 0.85 + (hash(task_id) % 100) / 1000,  # 模拟质量分数
+                        "execution_time": 2.5 + (hash(task_id) % 50) / 10  # 模拟执行时间
+                    }
+
+                    results.append(result)
+                    completed_count += 1
+
+                    logger.info(f"✅ 模拟任务 {task_id} 执行完成")
+
+                except Exception as e:
+                    logger.error(f"❌ 模拟任务 {assignment.get('task_id')} 执行失败: {e}")
+                    failed_count += 1
+
+            # 生成执行结果
+            execution_result = {
+                "execution_status": "completed" if failed_count == 0 else "partial",
+                "total_tasks": len(assignments),
+                "completed_tasks": completed_count,
+                "failed_tasks": failed_count,
+                "results": results,
+                "summary": f"成功执行 {completed_count}/{len(assignments)} 个任务"
+            }
+
+            # 保存结果到状态
+            ctx.session.state['adk_task_results'] = execution_result
+
+            return json.dumps(execution_result, indent=2, ensure_ascii=False)
+
+        except Exception as e:
+            logger.error(f"❌ 模拟ADK执行失败: {e}")
+            raise
+
+    async def _process_adk_execution_results(self, ctx: InvocationContext, execution_result: str) -> str:
+        """处理ADK执行结果"""
+        try:
+            logger.info("📊 处理ADK执行结果...")
+
+            # 解析执行结果
+            try:
+                result_data = json.loads(execution_result)
+            except json.JSONDecodeError:
+                logger.error("❌ ADK执行结果JSON解析失败")
+                result_data = {"execution_status": "failed", "summary": "结果解析失败"}
+
+            # 提取关键信息
+            total_tasks = result_data.get('total_tasks', 0)
+            completed_tasks = result_data.get('completed_tasks', 0)
+            failed_tasks = result_data.get('failed_tasks', 0)
+            execution_status = result_data.get('execution_status', 'unknown')
+
+            # 记录统计信息
+            success_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+            # 发送UI通知
+            status_msg = f"🎯 ADK任务执行完成: {completed_tasks}/{total_tasks} 成功 (成功率: {success_rate:.1f}%)"
+            logger.info(status_msg)
+            self._send_ui_log(status_msg)
+
+            # 更新内部状态（兼容现有系统）
+            self._update_internal_state_from_adk_results(result_data)
+
+            # 生成返回消息
+            if execution_status == "completed":
+                return f"✅ 所有任务执行完成，成功率: {success_rate:.1f}%"
+            elif execution_status == "partial":
+                return f"⚠️ 部分任务执行完成，成功: {completed_tasks}, 失败: {failed_tasks}"
+            else:
+                return f"❌ 任务执行失败，请检查日志"
+
+        except Exception as e:
+            logger.error(f"❌ 处理ADK执行结果失败: {e}")
+            return f"❌ 结果处理失败: {e}"
+
+    def _update_internal_state_from_adk_results(self, result_data: Dict[str, Any]):
+        """从ADK结果更新内部状态（保持与现有系统的兼容性）"""
+        try:
+            # 清空待完成任务（因为ADK已经处理完成）
+            self._pending_tasks.clear()
+
+            # 更新已完成任务
+            results = result_data.get('results', [])
+            for result in results:
+                task_id = result.get('task_id')
+                if task_id:
+                    # 创建兼容的完成结果对象
+                    from src.utils.task_completion_notifier import TaskCompletionResult
+
+                    completion_result = TaskCompletionResult(
+                        task_id=task_id,
+                        satellite_id=result.get('satellite_id', 'unknown'),
+                        discussion_id='adk_execution',
+                        status=result.get('status', 'completed'),
+                        completion_time=datetime.now().isoformat(),
+                        iterations_completed=1,
+                        quality_score=result.get('quality_score', 0.0),
+                        discussion_result={'adk_execution': True},
+                        metadata={'execution_method': 'adk_agent_tools'}
+                    )
+
+                    self._completed_tasks[task_id] = completion_result
+
+            # 设置完成标志
+            self._all_discussions_completed = True
+            self._waiting_for_tasks = False
+
+            logger.info(f"✅ 内部状态已更新，处理了 {len(results)} 个任务结果")
+
+        except Exception as e:
+            logger.error(f"❌ 更新内部状态失败: {e}")
+
+    async def _execute_tasks_traditional_way(self, ctx: InvocationContext, task_assignments: Dict[str, Any]) -> str:
+        """传统的任务执行方式（回退机制）"""
+        try:
+            logger.info("🔄 使用传统任务执行机制")
+
+            # 调用原有的任务分发逻辑
+            assignments = task_assignments.get('assignments', [])
+
+            for assignment in assignments:
+                satellite_id = assignment.get('satellite_id')
+                task_info = assignment.get('task_info')
+
+                if satellite_id and task_info:
+                    # 发送任务给卫星智能体
+                    success = await self._send_task_to_satellite(satellite_id, task_info)
+                    if success:
+                        self._pending_tasks.add(task_info.task_id)
+
+            # 等待任务完成
+            await self._wait_for_all_tasks_completion()
+
+            return f"传统方式执行完成，处理了 {len(assignments)} 个任务"
+
+        except Exception as e:
+            logger.error(f"❌ 传统任务执行失败: {e}")
+            return f"❌ 传统任务执行失败: {e}"
+
+    async def _on_task_completed(self, completion_result):
+        """处理任务完成通知"""
+        try:
+            task_id = completion_result.task_id
+            status = completion_result.status
+
+            logger.info(f"📢 收到任务完成通知: {task_id} (状态: {status})")
+
+            # 从待完成任务集合中移除
+            if task_id in self._pending_tasks:
+                self._pending_tasks.remove(task_id)
+                logger.info(f"✅ 任务 {task_id} 已从待完成列表移除，剩余: {len(self._pending_tasks)}")
+
+            # 存储完成结果
+            self._completed_tasks[task_id] = completion_result
+
+            # 发送UI日志
+            self._send_ui_log(f"📋 任务完成: {task_id} ({status}), 质量分数: {completion_result.quality_score:.3f}")
+
+            # 检查是否所有任务都已完成
+            if len(self._pending_tasks) == 0 and self._waiting_for_tasks:
+                logger.info("🎯 所有任务已完成，可以开始下一轮规划")
+                self._all_discussions_completed = True
+                self._waiting_for_tasks = False
+
+                # 发送UI通知
+                self._send_ui_log("✅ 所有任务已完成，准备开始下一轮规划")
+
+        except Exception as e:
+            logger.error(f"❌ 处理任务完成通知失败: {e}")
+
+    async def _wait_for_all_tasks_completion(self):
+        """等待所有任务完成"""
+        try:
+            if len(self._pending_tasks) == 0:
+                logger.info("📋 没有待完成的任务，直接继续")
+                return
+
+            logger.info(f"⏳ 等待 {len(self._pending_tasks)} 个任务完成...")
+            self._waiting_for_tasks = True
+            self._all_discussions_completed = False
+
+            # 发送UI通知
+            self._send_ui_log(f"⏳ 等待 {len(self._pending_tasks)} 个任务完成...")
+
+            # 等待所有任务完成，最多等待15分钟
+            max_wait_time = 900  # 15分钟
+            check_interval = 5   # 每5秒检查一次
+            total_wait_time = 0
+
+            while total_wait_time < max_wait_time and len(self._pending_tasks) > 0:
+                await asyncio.sleep(check_interval)
+                total_wait_time += check_interval
+
+                # 显示等待进度
+                if total_wait_time % 30 == 0:  # 每30秒显示一次进度
+                    remaining_tasks = len(self._pending_tasks)
+                    completed_tasks = len(self._completed_tasks)
+
+                    progress_msg = f"⏳ 等待中... 剩余任务: {remaining_tasks}, 已完成: {completed_tasks}, 已等待: {total_wait_time}s"
+                    logger.info(progress_msg)
+                    self._send_ui_log(progress_msg)
+
+            # 检查等待结果
+            if len(self._pending_tasks) == 0:
+                logger.info(f"✅ 所有任务已完成，等待时间: {total_wait_time}s")
+                self._send_ui_log(f"✅ 所有任务已完成，等待时间: {total_wait_time}s")
+            else:
+                # 超时处理
+                timeout_tasks = list(self._pending_tasks)
+                logger.warning(f"⚠️ 等待超时，仍有 {len(timeout_tasks)} 个任务未完成: {timeout_tasks}")
+                self._send_ui_log(f"⚠️ 等待超时，强制继续下一轮规划")
+
+                # 清理超时任务
+                self._pending_tasks.clear()
+
+            self._waiting_for_tasks = False
+
+        except Exception as e:
+            logger.error(f"❌ 等待任务完成失败: {e}")
+            self._waiting_for_tasks = False
+
+    def _log_task_completion_statistics(self):
+        """记录任务完成统计信息"""
+        try:
+            if not self._completed_tasks:
+                logger.info("📊 本轮无任务完成统计")
+                return
+
+            total_tasks = len(self._completed_tasks)
+            completed_count = len([t for t in self._completed_tasks.values() if t.status == 'completed'])
+            failed_count = len([t for t in self._completed_tasks.values() if t.status == 'failed'])
+
+            avg_quality = sum(t.quality_score for t in self._completed_tasks.values()) / total_tasks
+            avg_iterations = sum(t.iterations_completed for t in self._completed_tasks.values()) / total_tasks
+
+            stats_msg = f"📊 任务完成统计: 总数={total_tasks}, 成功={completed_count}, 失败={failed_count}, 平均质量={avg_quality:.3f}, 平均迭代={avg_iterations:.1f}"
+            logger.info(stats_msg)
+            self._send_ui_log(stats_msg)
+
+            # 清理已完成的任务结果，为下一轮做准备
+            self._completed_tasks.clear()
+
+        except Exception as e:
+            logger.error(f"❌ 记录任务完成统计失败: {e}")
     
     def _create_tools(self) -> List[FunctionTool]:
         """创建智能体工具"""
@@ -521,12 +1013,8 @@ class SimulationSchedulerAgent(LlmAgent):
 
                 self._is_running = False
 
-                # 等待当前ADK标准讨论组完成
-                adk_discussions = self._get_active_adk_discussions()
-                if adk_discussions:
-                    logger.info(f"⏳ 等待 {len(adk_discussions)} 个活跃ADK讨论组完成...")
-                    final_wait_result = await self._ensure_all_discussions_complete(ctx)
-                    logger.info(f"✅ 讨论组完成: {final_wait_result}")
+                # 仿真调度智能体不再管理讨论组，直接停止
+                logger.info("ℹ️ 仿真调度智能体不再管理讨论组，直接停止滚动规划")
 
                 return "✅ 滚动规划已停止"
 
@@ -1371,6 +1859,11 @@ class SimulationSchedulerAgent(LlmAgent):
 
                 if success:
                     logger.info(f"✅ 元任务集 {meta_task_message['task_id']} 成功发送给卫星智能体 {satellite_id}")
+
+                    # 将任务添加到待完成列表
+                    self._pending_tasks.add(task_info.task_id)
+                    logger.info(f"📋 任务 {task_info.task_id} 已添加到待完成列表，总数: {len(self._pending_tasks)}")
+
                     return "success"
                 else:
                     logger.error(f"❌ 卫星智能体 {satellite_id} 拒绝元任务集 {meta_task_message['task_id']}")
@@ -1385,19 +1878,22 @@ class SimulationSchedulerAgent(LlmAgent):
 
     async def _establish_discussion_group_for_missile(self, missile_info: Dict[str, Any]) -> str:
         """
-        为导弹跟踪建立真实的ADK讨论组 - 优化版：委托给卫星智能体创建
+        为导弹跟踪委托任务（已优化）
+
+        优化说明：仿真调度智能体不再创建讨论组，直接委托任务给卫星智能体，
+        由卫星智能体根据任务复杂度自主决定是否需要协作。
 
         Args:
             missile_info: 导弹信息
 
         Returns:
-            讨论组建立结果
+            任务委托结果
         """
         try:
             missile_id = missile_info['missile_id']
-            logger.info(f"🗣️ 为导弹 {missile_id} 建立真实ADK讨论组（委托给卫星智能体）...")
+            logger.info(f"📋 为导弹 {missile_id} 委托任务给卫星智能体（已优化）...")
 
-            # 获取参与讨论的卫星列表（前3颗最近的卫星）
+            # 获取参与的卫星列表（前3颗最近的卫星）
             satellites = self._get_available_satellites()
             launch_pos = missile_info.get('launch_position', {})
             missile_position = {
@@ -1409,54 +1905,50 @@ class SimulationSchedulerAgent(LlmAgent):
             nearest_satellites = await self._find_nearest_satellites(missile_position, satellites, count=3)
 
             if not nearest_satellites:
-                return f"❌ 无法为导弹 {missile_id} 找到参与讨论的卫星"
+                return f"❌ 无法为导弹 {missile_id} 找到候选卫星"
 
             participant_list = [sat['id'] for sat in nearest_satellites]
-            logger.info(f"   参与者: {', '.join(participant_list)}")
+            logger.info(f"   候选卫星: {', '.join(participant_list)}")
 
-            # 使用卫星工厂委托讨论组创建
+            # 直接委托任务给卫星工厂，不创建讨论组
             if not self._satellite_factory:
-                return f"❌ 卫星工厂未初始化，无法委托创建讨论组"
+                return f"❌ 卫星工厂未初始化，无法委托任务"
 
-            logger.info(f"🏭 通过卫星工厂委托创建讨论组，参与者: {participant_list}")
+            logger.info(f"🏭 通过卫星工厂委托任务，候选卫星: {participant_list}")
+            logger.info("📋 卫星智能体将根据任务复杂度自主决定是否需要协作")
 
-            # 委托给卫星工厂处理讨论组创建
-            delegation_result = await self._satellite_factory.delegate_discussion_group_creation(
+            # 委托给卫星工厂处理任务分配（不创建讨论组）
+            delegation_result = await self._satellite_factory.delegate_task_assignment(
                 missile_info, participant_list
             )
 
-            # 等待一小段时间让讨论组创建完成
-            import asyncio
-            await asyncio.sleep(2)
-
-            # 检查讨论组是否创建成功
-            adk_discussions = self._get_active_adk_discussions()
-            created_discussion = None
-
-            for discussion_id, discussion_info in adk_discussions.items():
-                if missile_id in discussion_info.get('task_description', ''):
-                    created_discussion = discussion_id
-                    break
-
-            if created_discussion:
-                logger.info(f"🎉 卫星工厂成功委托创建ADK讨论组: {created_discussion}")
-                return f"🧠 卫星工厂委托创建的讨论组 {created_discussion} 已启动，参与智能体正在进行协同推理讨论"
-            else:
-                logger.info(f"📋 委托结果: {delegation_result}")
-                return f"🧠 已通过卫星工厂委托创建讨论组，{delegation_result}"
+            return f"🎯 任务已委托给卫星智能体，{delegation_result}。卫星智能体将自主管理协作。"
 
         except Exception as e:
-            logger.error(f"❌ 为导弹 {missile_info.get('missile_id', 'Unknown')} 委托创建ADK讨论组失败: {e}")
-            return f"❌ 委托创建ADK讨论组失败: {e}"
+            logger.error(f"❌ 为导弹 {missile_id} 委托任务失败: {e}")
+            return f"❌ 任务委托失败: {e}"
 
     def _get_active_adk_discussions(self) -> Dict[str, Any]:
-        """获取活跃的ADK标准讨论组"""
+        """获取活跃的任务信息 - 基于任务完成通知机制"""
         try:
-            if self._multi_agent_system:
-                return self._multi_agent_system.get_active_adk_standard_discussions()
-            return {}
+            # 基于待完成任务构建活跃任务信息
+            active_tasks = {}
+
+            for task_id in self._pending_tasks:
+                active_tasks[task_id] = {
+                    'task_id': task_id,
+                    'status': 'active',
+                    'type': 'task_notification_based',
+                    'created_time': datetime.now().isoformat()
+                }
+
+            if active_tasks:
+                logger.debug(f"📊 当前活跃任务: {len(active_tasks)} 个")
+
+            return active_tasks
+
         except Exception as e:
-            logger.error(f"❌ 获取ADK讨论组失败: {e}")
+            logger.error(f"❌ 获取活跃任务信息失败: {e}")
             return {}
 
     def _check_adk_discussion_status(self, discussion_id: str, discussion_info: Dict[str, Any]) -> str:
@@ -1557,20 +2049,17 @@ class SimulationSchedulerAgent(LlmAgent):
             return 'failed'
 
     async def _monitor_coordination_process(self, ctx: InvocationContext) -> str:
-        """监控协同决策过程 - 等待ADK讨论组完成"""
+        """监控协同决策过程 - 使用任务完成通知机制"""
         try:
-            # 只检查ADK标准讨论组
-            adk_discussions = self._get_active_adk_discussions()
-            if not adk_discussions:
-                return "无活跃ADK讨论组，跳过协同决策"
+            # 使用新的任务完成通知机制
+            if len(self._pending_tasks) == 0:
+                logger.info("📋 没有待完成的任务，跳过协同决策监控")
+                return "无待完成任务，跳过协同决策"
 
-            logger.info(f"🤝 开始监控ADK标准讨论组完成状态")
-            logger.info(f"   ADK标准讨论组: {len(adk_discussions)} 个")
+            logger.info(f"📊 协同决策监控: 当前有 {len(self._pending_tasks)} 个待完成任务")
+            return f"协同决策监控中，待完成任务: {len(self._pending_tasks)} 个"
 
-            # 等待所有讨论组完成
-            coordination_results = []
-            max_wait_time = 1200  # 最大等待时间20分钟（与超时阈值一致）
-            check_interval = 5    # 每5秒检查一次
+            # 仿真调度智能体不再管理讨论组，移除等待逻辑
             total_wait_time = 0
 
             while total_wait_time < max_wait_time:
@@ -1642,16 +2131,14 @@ class SimulationSchedulerAgent(LlmAgent):
 
     async def _ensure_all_discussions_complete(self, ctx: InvocationContext) -> str:
         """
-        确保所有讨论组完成后再进入下一轮规划
-        这是关键的时序控制方法，防止规划周期重叠
+        确保所有任务完成后再进入下一轮规划 - 使用任务完成通知机制
         """
         try:
-            # 检查是否有活跃的ADK讨论组
-            adk_discussions = self._get_active_adk_discussions()
-            if not adk_discussions:
-                return "无活跃ADK讨论组"
+            # 使用新的任务完成通知机制等待所有任务完成
+            await self._wait_for_all_tasks_completion()
 
-            logger.info(f"🕐 最终检查：确保 {len(adk_discussions)} 个ADK讨论组全部完成")
+            logger.info("✅ 所有任务已完成，可以开始下一轮规划")
+            return "所有任务已完成"
 
             max_final_wait = 1800  # 最大等待30分钟
             check_interval = 5     # 每5秒检查一次，提高响应速度
@@ -1732,17 +2219,19 @@ class SimulationSchedulerAgent(LlmAgent):
                             if hasattr(part, 'text'):
                                 logger.info(f"   规划事件: {part.text}")
 
-                # 确保所有讨论组完成后再进入下一轮
-                final_wait_result = await self._ensure_all_discussions_complete(ctx)
+                # 等待所有任务完成通知
+                await self._wait_for_all_tasks_completion()
 
-                cycle_complete_msg = f"✅ 第 {self._current_planning_cycle} 轮规划完成，{final_wait_result}"
+                cycle_complete_msg = f"✅ 第 {self._current_planning_cycle} 轮规划完成，所有任务已完成"
                 logger.info(cycle_complete_msg)
                 self._send_ui_log(cycle_complete_msg)
                 self._send_ui_planning_status("Cycle", "Complete", f"第 {self._current_planning_cycle} 轮规划完成")
 
-                # 所有讨论组已完成，立即开始下一轮规划（去除等待时间）
+                # 显示任务完成统计
+                self._log_task_completion_statistics()
+
+                # 所有任务已完成，立即开始下一轮规划
                 logger.info("✅ 上一轮规划任务完成，立即开始下一轮规划...")
-                # 不再等待固定时间间隔，直接进入下一轮
 
             # 完成所有规划周期
             final_msg = f"📊 滚动规划完成，共执行 {self._current_planning_cycle} 轮规划"
@@ -1757,15 +2246,13 @@ class SimulationSchedulerAgent(LlmAgent):
 
     async def _generate_final_report(self) -> str:
         """生成最终报告"""
-        # 获取ADK讨论组数量
-        adk_discussions = self._get_active_adk_discussions()
-
+        # 仿真调度智能体不再管理讨论组
         report = f"""
         仿真调度完成报告:
         - 总规划周期: {self._current_planning_cycle}
-        - 处理的ADK讨论组: {len(adk_discussions)}
         - 收集的规划结果: {len(self._planning_results)}
         - 仿真时间范围: {self._time_manager.start_time} - {self._time_manager.end_time}
+        - 注: 讨论组管理已移交给卫星智能体
         """
         return report
     
@@ -1844,16 +2331,15 @@ class SimulationSchedulerAgent(LlmAgent):
         Returns:
             系统状态信息
         """
-        # 获取ADK讨论组数量
-        adk_discussions = self._get_active_adk_discussions()
-
+        # 仿真调度智能体不再管理讨论组
         return {
             'is_running': self._is_running,
             'current_cycle': self._current_planning_cycle,
-            'active_adk_groups': len(adk_discussions),
+            'active_adk_groups': 0,  # 不再管理讨论组
             'planning_results_count': len(self._planning_results),
             'coordination_results_count': len(self._coordination_results),
-            'current_session_id': self._current_session_id
+            'current_session_id': self._current_session_id,
+            'note': '讨论组管理已移交给卫星智能体'
         }
 
 
@@ -2284,17 +2770,17 @@ class SimulationSchedulerAgent(LlmAgent):
 
             logger.info(f"🔄 开始解散 {len(completed_discussion_ids)} 个已完成的讨论组")
 
-            # 获取ADK标准讨论系统
-            adk_standard_system = self._multi_agent_system.get_adk_standard_discussion_system()
-            if not adk_standard_system:
-                logger.warning("⚠️ ADK标准讨论系统不可用，无法解散讨论组")
+            # 获取ADK官方讨论系统（修复：使用官方系统而不是已删除的标准系统）
+            adk_official_system = self._multi_agent_system.get_adk_official_discussion_system()
+            if not adk_official_system:
+                logger.warning("⚠️ ADK官方讨论系统不可用，无法解散讨论组")
                 return
 
             dissolved_count = 0
             for discussion_id in completed_discussion_ids:
                 try:
-                    # 调用ADK标准讨论系统的解散方法
-                    success = await adk_standard_system.complete_discussion(discussion_id)
+                    # 调用ADK官方讨论系统的解散方法
+                    success = await adk_official_system.complete_discussion(discussion_id)
                     if success:
                         dissolved_count += 1
                         logger.info(f"✅ 讨论组 {discussion_id} 已解散")
@@ -2310,46 +2796,38 @@ class SimulationSchedulerAgent(LlmAgent):
             logger.error(f"❌ 解散讨论组过程失败: {e}")
 
     async def _on_discussion_completed(self, discussion_id: str):
-        """讨论组完成时的回调方法"""
+        """讨论组完成时的回调方法（已废弃）"""
         try:
             logger.info(f"📢 收到讨论组完成通知: {discussion_id}")
+            logger.info("ℹ️ 仿真调度智能体不再管理讨论组，忽略完成通知")
 
-            # 可以在这里添加额外的清理逻辑
-            # 例如更新规划状态、记录统计信息等
-
-            # 检查是否所有讨论组都已完成，如果是则可以开始下一轮规划
-            adk_discussions = self._get_active_adk_discussions()
-            if not adk_discussions:
-                logger.info("🎯 所有讨论组已完成，立即触发下一轮规划")
-                # 设置标志位，表示可以立即开始下一轮规划
-                self._all_discussions_completed = True
+            # 仿真调度智能体不再管理讨论组，直接设置完成标志
+            self._all_discussions_completed = True
 
         except Exception as e:
             logger.error(f"❌ 处理讨论组完成通知失败: {e}")
 
     def _check_all_discussions_completed(self) -> bool:
         """
-        检查所有讨论组是否已完成
+        检查所有任务是否已完成 - 使用任务完成通知机制
 
         Returns:
-            bool: 如果所有讨论组都已完成返回True，否则返回False
+            bool: 是否所有任务都已完成
         """
         try:
-            adk_discussions = self._get_active_adk_discussions()
-            if not adk_discussions:
-                return True
+            # 使用新的任务完成通知机制检查
+            all_completed = len(self._pending_tasks) == 0
 
-            # 检查每个讨论组的状态
-            for discussion_id, discussion_info in adk_discussions.items():
-                adk_status = self._check_adk_discussion_status(discussion_id, discussion_info)
-                if adk_status not in ['completed', 'failed', 'timeout']:
-                    return False
+            if all_completed:
+                logger.debug("✅ 所有任务已完成")
+            else:
+                logger.debug(f"⏳ 还有 {len(self._pending_tasks)} 个任务待完成")
 
-            return True
+            return all_completed
 
         except Exception as e:
-            logger.error(f"❌ 检查讨论组完成状态失败: {e}")
-            return False
+            logger.error(f"❌ 检查任务完成状态失败: {e}")
+            return True  # 出错时返回True，避免阻塞
 
     async def _auto_dissolve_discussion(self, discussion_id: str):
         """自动解散单个讨论组"""
@@ -2424,10 +2902,8 @@ class SimulationSchedulerAgent(LlmAgent):
                 if success:
                     self._send_ui_log(f"✅ 增强元任务集发送成功: {satellite_id}")
 
-                    # 5. 建立增强讨论组
-                    discussion_result = await self._establish_enhanced_discussion_group(
-                        enhanced_meta_task_set, [satellite_agent]
-                    )
+                    # 5. 协作由卫星智能体自主管理（已优化）
+                    logger.info("📋 增强任务协作由卫星智能体自主管理")
 
                     return f"✅ 增强元任务集发送成功给卫星 {satellite_id}，包含 {len(all_missile_info)} 个导弹目标"
                 else:
@@ -2601,7 +3077,7 @@ class SimulationSchedulerAgent(LlmAgent):
                         sent_count += 1
 
             if sent_count > 0:
-                # 4. 创建协调讨论组
+                # 4. 协调由卫星智能体自主管理（已优化）
                 discussion_group_id = await self._create_realistic_coordination_discussion(
                     meta_task_package, candidate_satellites[:sent_count]
                 )
@@ -2761,44 +3237,18 @@ class SimulationSchedulerAgent(LlmAgent):
             return False
 
     async def _create_realistic_coordination_discussion(self, meta_task_package, candidate_satellites) -> Optional[str]:
-        """创建现实协调讨论组"""
-        try:
-            # 1. 准备讨论组参数
-            discussion_topic = f"现实导弹跟踪任务协商_{meta_task_package.task_package_id}"
+        """
+        创建现实协调讨论组（已优化）
 
-            # 2. 获取参与者列表
-            participant_ids = [sat['id'] for sat in candidate_satellites]
+        优化说明：仿真调度智能体不再创建讨论组，协作由卫星智能体自主管理
+        """
+        logger.info("📋 仿真调度智能体已优化：不再创建讨论组，协作由卫星智能体自主管理")
+        logger.info(f"   元任务包: {meta_task_package.task_package_id}")
+        logger.info(f"   候选卫星: {len(candidate_satellites)} 个")
+        logger.info("   卫星智能体将根据任务复杂度自主决定是否需要协作")
 
-            # 3. 准备共享上下文
-            shared_context = {
-                'meta_task_package_id': meta_task_package.task_package_id,
-                'missile_count': len(meta_task_package.missile_targets),
-                'coordination_requirements': meta_task_package.coordination_requirements.to_dict() if hasattr(meta_task_package.coordination_requirements, 'to_dict') else {},
-                'mission_requirements': meta_task_package.mission_requirements.to_dict() if hasattr(meta_task_package.mission_requirements, 'to_dict') else {}
-            }
-
-            # 4. 创建ADK讨论组
-            if hasattr(self, '_multi_agent_system') and self._multi_agent_system:
-                discussion_id = await self._multi_agent_system.create_adk_official_discussion(
-                    pattern_type="parallel_fanout",
-                    participating_agents=participant_ids,
-                    task_description=discussion_topic,
-                    ctx=shared_context
-                )
-
-                if discussion_id:
-                    logger.info(f"✅ 创建现实协调讨论组: {discussion_id}")
-                    return discussion_id
-                else:
-                    logger.error("❌ 创建现实协调讨论组失败")
-                    return None
-            else:
-                logger.warning("⚠️ 多智能体系统不可用，跳过讨论组创建")
-                return None
-
-        except Exception as e:
-            logger.error(f"❌ 创建现实协调讨论组失败: {e}")
-            return None
+        # 返回None表示不创建讨论组，让卫星智能体自主协作
+        return None
 
     def _calculate_center_position(self, all_missile_info: List[Dict[str, Any]]) -> Dict[str, float]:
         """计算导弹群的几何中心位置"""

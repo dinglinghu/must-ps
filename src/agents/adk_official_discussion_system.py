@@ -41,8 +41,14 @@ class ADKOfficialDiscussionSystem(BaseAgent):
         
         # 生命周期监控
         self._lifecycle_monitor_task = None
+        self._auto_cleanup_enabled = True
+        self._max_discussion_lifetime = 600  # 10分钟最大生命周期
         
         logger.info("✅ ADK官方讨论系统初始化完成")
+
+        # 启动生命周期监控
+        if self._auto_cleanup_enabled:
+            self._start_lifecycle_monitoring()
     
     async def create_discussion(
         self,
@@ -68,6 +74,9 @@ class ADKOfficialDiscussionSystem(BaseAgent):
             logger.info(f"🔄 创建ADK官方讨论组: {pattern_type}")
             logger.info(f"   参与智能体: {[agent.name for agent in participating_agents]}")
             logger.info(f"   任务描述: {task_description}")
+
+            # 确保生命周期监控已启动
+            self._ensure_lifecycle_monitoring()
 
             # 检查并清理智能体的旧关系
             await self._cleanup_agents_old_relationships(participating_agents)
@@ -892,9 +901,19 @@ class ADKOfficialDiscussionSystem(BaseAgent):
         for iteration in range(1, max_iterations + 1):
             logger.info(f"🔄 ADK迭代优化 - 第 {iteration}/{max_iterations} 轮")
 
-            # 更新迭代计数
+            # 更新迭代计数和状态到Session Manager
             if ctx and hasattr(ctx, 'session'):
                 ctx.session.state['iteration_count'] = iteration
+
+                # 同步更新到Session Manager供滚动规划管理器使用
+                session_manager = get_adk_session_manager()
+                discussion_id = getattr(loop_agent, '_discussion_id', 'unknown')
+                session_manager.update_discussion_state(discussion_id, {
+                    'iteration_count': iteration,
+                    'max_iterations': max_iterations,
+                    'status': 'iterating',
+                    'last_update': datetime.now().isoformat()
+                })
 
             # 阶段1: 优化器（Refiner）进行方案改进
             if refiner:
@@ -928,6 +947,14 @@ class ADKOfficialDiscussionSystem(BaseAgent):
                                 'solution': updated_solution.copy(),
                                 'response': refiner_response,
                                 'timestamp': datetime.now().isoformat()
+                            })
+
+                            # 同步更新当前解决方案到Session Manager
+                            session_manager = get_adk_session_manager()
+                            discussion_id = getattr(loop_agent, '_discussion_id', 'unknown')
+                            session_manager.update_discussion_state(discussion_id, {
+                                'current_solution': updated_solution,
+                                'optimization_progress': f"第{iteration}轮优化完成"
                             })
 
                     except Exception as e:
@@ -1002,11 +1029,33 @@ class ADKOfficialDiscussionSystem(BaseAgent):
 
             logger.info(f"📊 质量评估完成 - 分数: {quality_score:.3f}, 等级: {quality_assessment.get('level', 'unknown')}")
 
+            # 同步质量分数到Session Manager
+            if ctx and hasattr(ctx, 'session'):
+                session_manager = get_adk_session_manager()
+                discussion_id = getattr(loop_agent, '_discussion_id', 'unknown')
+                session_manager.update_discussion_state(discussion_id, {
+                    'current_quality_score': quality_score,
+                    'quality_level': quality_assessment.get('level', 'unknown'),
+                    'quality_update_time': datetime.now().isoformat()
+                })
+
             # 阶段3: 检查迭代终止条件
             should_stop = self._check_iteration_termination(quality_score, iteration, max_iterations)
 
             if should_stop:
                 logger.info(f"✅ 第 {iteration} 轮达到终止条件，迭代优化结束")
+
+                # 标记为完成状态
+                if ctx and hasattr(ctx, 'session'):
+                    session_manager = get_adk_session_manager()
+                    discussion_id = getattr(loop_agent, '_discussion_id', 'unknown')
+                    session_manager.update_discussion_state(discussion_id, {
+                        'status': 'completed',
+                        'completion_reason': 'quality_achieved' if quality_score >= 0.85 else 'sufficient_progress',
+                        'final_quality_score': quality_score,
+                        'total_iterations': iteration,
+                        'completion_time': datetime.now().isoformat()
+                    })
                 break
 
             logger.info(f"🔄 第 {iteration} 轮完成，继续下一轮迭代")
@@ -1080,12 +1129,14 @@ class ADKOfficialDiscussionSystem(BaseAgent):
                 await self._restore_agents_original_state(discussion_agent, ctx)
 
                 # 3. 停止执行任务
-                if hasattr(discussion_agent, '_execution_task'):
+                if hasattr(discussion_agent, '_execution_task') and discussion_agent._execution_task is not None:
                     try:
                         discussion_agent._execution_task.cancel()
                         logger.debug(f"🛑 取消讨论组执行任务: {discussion_id}")
                     except Exception as e:
                         logger.warning(f"⚠️ 取消执行任务失败: {e}")
+                else:
+                    logger.debug(f"ℹ️ 讨论组 {discussion_id} 没有执行任务需要取消")
 
                 # 4. 清理内存中的讨论组引用
                 del self._active_discussions[discussion_id]
@@ -2175,3 +2226,125 @@ class ADKOfficialDiscussionSystem(BaseAgent):
         except Exception as e:
             logger.warning(f"⚠️ 提取优化策略失败: {e}")
             return "优化策略提取失败"
+
+    def _start_lifecycle_monitoring(self):
+        """启动生命周期监控"""
+        try:
+            # 检查是否有运行的事件循环
+            try:
+                loop = asyncio.get_running_loop()
+                # 有运行的事件循环，可以直接创建任务
+                if self._lifecycle_monitor_task is None or self._lifecycle_monitor_task.done():
+                    self._lifecycle_monitor_task = asyncio.create_task(self._monitor_discussion_lifecycle())
+                    logger.info("✅ ADK官方讨论系统生命周期监控已启动")
+            except RuntimeError:
+                # 没有运行的事件循环，延迟启动
+                logger.info("⏳ 没有运行的事件循环，生命周期监控将在首次使用时启动")
+                self._lifecycle_monitor_task = None
+        except Exception as e:
+            logger.error(f"❌ 启动生命周期监控失败: {e}")
+
+    def _ensure_lifecycle_monitoring(self):
+        """确保生命周期监控已启动"""
+        try:
+            if not self._auto_cleanup_enabled:
+                return
+
+            # 检查监控任务是否需要启动
+            if self._lifecycle_monitor_task is None or self._lifecycle_monitor_task.done():
+                try:
+                    loop = asyncio.get_running_loop()
+                    self._lifecycle_monitor_task = asyncio.create_task(self._monitor_discussion_lifecycle())
+                    logger.info("✅ ADK官方讨论系统生命周期监控已启动")
+                except RuntimeError:
+                    logger.debug("⏳ 没有运行的事件循环，无法启动生命周期监控")
+        except Exception as e:
+            logger.warning(f"⚠️ 确保生命周期监控启动失败: {e}")
+
+    async def _monitor_discussion_lifecycle(self):
+        """监控讨论组生命周期"""
+        while self._auto_cleanup_enabled:
+            try:
+                await self._check_and_cleanup_discussions()
+                await asyncio.sleep(30)  # 每30秒检查一次
+            except asyncio.CancelledError:
+                logger.info("🛑 生命周期监控已停止")
+                break
+            except Exception as e:
+                logger.error(f"❌ 生命周期监控异常: {e}")
+                await asyncio.sleep(60)  # 出错时等待更长时间
+
+    async def _check_and_cleanup_discussions(self):
+        """检查并清理讨论组"""
+        try:
+            current_time = datetime.now()
+            discussions_to_cleanup = []
+
+            for discussion_id, discussion_agent in list(self._active_discussions.items()):
+                try:
+                    # 检查是否超时
+                    if await self._is_discussion_timeout(discussion_id, current_time):
+                        discussions_to_cleanup.append((discussion_id, "timeout"))
+
+                    # 检查是否已完成但未解散
+                    elif await self._is_discussion_completed_but_not_dissolved(discussion_id):
+                        discussions_to_cleanup.append((discussion_id, "completed"))
+
+                except Exception as e:
+                    logger.warning(f"⚠️ 检查讨论组 {discussion_id} 状态失败: {e}")
+
+            # 执行清理
+            for discussion_id, reason in discussions_to_cleanup:
+                logger.info(f"🧹 自动清理讨论组: {discussion_id} (原因: {reason})")
+                await self.complete_discussion(discussion_id)
+
+        except Exception as e:
+            logger.error(f"❌ 检查和清理讨论组失败: {e}")
+
+    async def _is_discussion_timeout(self, discussion_id: str, current_time: datetime) -> bool:
+        """检查讨论组是否超时"""
+        try:
+            session_manager = get_adk_session_manager()
+            adk_discussions = session_manager.get_adk_discussions()
+
+            discussion_info = adk_discussions.get(discussion_id)
+            if not discussion_info:
+                return True  # 没有信息的讨论组认为超时
+
+            created_time_str = discussion_info.get('created_time', '')
+            if created_time_str:
+                created_time = datetime.fromisoformat(created_time_str.replace('Z', '+00:00'))
+                elapsed = (current_time - created_time).total_seconds()
+                return elapsed > self._max_discussion_lifetime
+
+            return True  # 没有创建时间的讨论组认为超时
+
+        except Exception as e:
+            logger.warning(f"⚠️ 检查讨论组超时失败: {e}")
+            return False
+
+    async def _is_discussion_completed_but_not_dissolved(self, discussion_id: str) -> bool:
+        """检查讨论组是否已完成但未解散"""
+        try:
+            session_manager = get_adk_session_manager()
+            discussion_state = session_manager.get_discussion_state(discussion_id)
+
+            status = discussion_state.get('status', 'active')
+            dissolved = discussion_state.get('dissolved', False)
+
+            # 如果状态是完成但未解散
+            return status == 'completed' and not dissolved
+
+        except Exception as e:
+            logger.warning(f"⚠️ 检查讨论组完成状态失败: {e}")
+            return False
+
+    def stop_lifecycle_monitoring(self):
+        """停止生命周期监控"""
+        try:
+            self._auto_cleanup_enabled = False
+            if self._lifecycle_monitor_task and not self._lifecycle_monitor_task.done():
+                self._lifecycle_monitor_task.cancel()
+            logger.info("🛑 ADK官方讨论系统生命周期监控已停止")
+        except Exception as e:
+            logger.error(f"❌ 停止生命周期监控失败: {e}")

@@ -716,7 +716,7 @@ class RollingPlanningCycleManager(BaseAgent):
 
     async def _wait_for_discussion_completion(self, cycle_info: PlanningCycleInfo, task_distribution: Dict[str, List[str]]):
         """
-        等待所有讨论组完成
+        等待所有讨论组完成（修复版）
 
         Args:
             cycle_info: 规划周期信息
@@ -725,17 +725,281 @@ class RollingPlanningCycleManager(BaseAgent):
         try:
             logger.info(f"⏳ 等待讨论组完成，任务分发: {len(task_distribution)} 个卫星")
 
-            # 获取讨论超时时间
+            # 获取讨论超时时间并计算合理的等待时间
             discussion_timeout = self._config.get('multi_agent_system', {}).get('leader_agents', {}).get('discussion_timeout', 300)
 
-            # 等待讨论完成（这里简化为等待固定时间）
-            # 在实际实现中，应该监听讨论组的完成事件
-            await asyncio.sleep(min(discussion_timeout / 10, 30))  # 最多等待30秒
+            # 基于迭代需求计算等待时间
+            base_time_per_iteration = 60  # 每轮基础时间60秒
+            max_iterations = 5
+            safety_margin = 1.5  # 安全边际
 
-            logger.info(f"✅ 讨论组等待完成")
+            estimated_time = base_time_per_iteration * max_iterations * safety_margin  # 450秒 = 7.5分钟
+            max_wait_time = min(estimated_time, 600)  # 最多等待10分钟
+
+            logger.info(f"📊 预估讨论时间: {estimated_time}s, 实际等待: {max_wait_time}s")
+
+            start_time = asyncio.get_event_loop().time()
+            check_interval = 5  # 每5秒检查一次
+
+            # 获取多智能体系统引用
+            multi_agent_system = getattr(self._satellite_factory, '_multi_agent_system', None)
+            if not multi_agent_system:
+                logger.warning("⚠️ 无法获取多智能体系统引用，使用简单等待")
+                await asyncio.sleep(30)
+                return
+
+            # 记录开始时的活跃讨论组
+            initial_discussions = self._get_active_discussions(multi_agent_system)
+            logger.info(f"📊 开始时活跃讨论组数量: {len(initial_discussions)}")
+
+            if not initial_discussions:
+                logger.info("ℹ️ 没有活跃讨论组，无需等待")
+                return
+
+            # 循环检查讨论组状态
+            while (asyncio.get_event_loop().time() - start_time) < max_wait_time:
+                current_discussions = self._get_active_discussions(multi_agent_system)
+
+                # 检查是否有讨论组需要解散
+                completed_discussions = []
+                for discussion_id in current_discussions:
+                    if self._is_discussion_completed(discussion_id, multi_agent_system):
+                        completed_discussions.append(discussion_id)
+
+                # 解散已完成的讨论组
+                if completed_discussions:
+                    await self._dissolve_completed_discussions(completed_discussions, multi_agent_system)
+
+                # 检查是否所有讨论组都已完成
+                remaining_discussions = self._get_active_discussions(multi_agent_system)
+                if len(remaining_discussions) == 0:
+                    logger.info("✅ 所有讨论组已完成并解散")
+                    break
+
+                # 显示等待进度和迭代状态
+                elapsed = asyncio.get_event_loop().time() - start_time
+                progress_info = self._get_discussions_progress(remaining_discussions)
+                logger.info(f"⏳ 等待中... 剩余讨论组: {len(remaining_discussions)}, 已等待: {elapsed:.1f}s")
+                logger.info(f"📊 迭代进度: {progress_info}")
+
+                await asyncio.sleep(check_interval)
+
+            # 强制清理剩余讨论组
+            final_discussions = self._get_active_discussions(multi_agent_system)
+            if final_discussions:
+                logger.warning(f"⚠️ 等待超时，强制清理剩余 {len(final_discussions)} 个讨论组")
+                await self._force_cleanup_discussions(final_discussions, multi_agent_system)
+
+            logger.info(f"✅ 讨论组等待完成，总耗时: {asyncio.get_event_loop().time() - start_time:.1f}s")
 
         except Exception as e:
             logger.error(f"❌ 等待讨论组完成失败: {e}")
+
+    def _get_discussion_progress(self, discussion_id: str) -> Dict[str, Any]:
+        """获取讨论组迭代进度"""
+        try:
+            from src.utils.adk_session_manager import get_adk_session_manager
+            session_manager = get_adk_session_manager()
+
+            # 检查讨论组状态
+            discussion_state = session_manager.get_discussion_state(discussion_id)
+
+            return {
+                'current_iteration': discussion_state.get('iteration_count', 0),
+                'max_iterations': discussion_state.get('max_iterations', 5),
+                'quality_score': discussion_state.get('current_quality_score', 0.0),
+                'status': discussion_state.get('status', 'active'),
+                'progress_percentage': (discussion_state.get('iteration_count', 0) / discussion_state.get('max_iterations', 5)) * 100
+            }
+        except Exception as e:
+            logger.warning(f"⚠️ 获取讨论组进度失败: {e}")
+            return {'status': 'unknown', 'progress_percentage': 0}
+
+    def _get_discussions_progress(self, discussion_ids: List[str]) -> str:
+        """获取多个讨论组的进度摘要"""
+        try:
+            if not discussion_ids:
+                return "无活跃讨论组"
+
+            progress_summary = []
+            for discussion_id in discussion_ids:
+                progress = self._get_discussion_progress(discussion_id)
+                current = progress.get('current_iteration', 0)
+                max_iter = progress.get('max_iterations', 5)
+                quality = progress.get('quality_score', 0.0)
+
+                progress_summary.append(f"{discussion_id[:8]}({current}/{max_iter}, Q:{quality:.2f})")
+
+            return ", ".join(progress_summary)
+        except Exception as e:
+            logger.warning(f"⚠️ 获取讨论组进度摘要失败: {e}")
+            return "进度获取失败"
+
+    def _get_active_discussions(self, multi_agent_system) -> List[str]:
+        """获取活跃讨论组列表"""
+        try:
+            active_discussions = []
+
+            # 获取ADK官方讨论系统中的活跃讨论组
+            adk_official_system = multi_agent_system.get_adk_official_discussion_system()
+            if adk_official_system and hasattr(adk_official_system, '_active_discussions'):
+                active_discussions.extend(adk_official_system._active_discussions.keys())
+
+            # 获取Session Manager中的ADK讨论组
+            from src.utils.adk_session_manager import get_adk_session_manager
+            session_manager = get_adk_session_manager()
+            adk_discussions = session_manager.get_adk_discussions()
+
+            for discussion_id, discussion_info in adk_discussions.items():
+                status = discussion_info.get('status', 'active')
+                if status == 'active' and discussion_id not in active_discussions:
+                    active_discussions.append(discussion_id)
+
+            return active_discussions
+
+        except Exception as e:
+            logger.error(f"❌ 获取活跃讨论组失败: {e}")
+            return []
+
+    def _is_discussion_completed(self, discussion_id: str, multi_agent_system) -> bool:
+        """智能判断讨论组是否真正完成"""
+        try:
+            progress = self._get_discussion_progress(discussion_id)
+
+            # 情况1: 明确标记为完成
+            if progress.get('status') == 'completed':
+                logger.info(f"✅ 讨论组 {discussion_id} 明确标记为完成")
+                return True
+
+            # 情况2: 达到最大迭代次数
+            current_iter = progress.get('current_iteration', 0)
+            max_iter = progress.get('max_iterations', 5)
+            if current_iter >= max_iter:
+                logger.info(f"✅ 讨论组 {discussion_id} 完成所有 {max_iter} 轮迭代")
+                return True
+
+            # 情况3: 质量分数达到优秀标准
+            quality_score = progress.get('quality_score', 0.0)
+            if quality_score >= 0.85:
+                logger.info(f"✅ 讨论组 {discussion_id} 达到优秀质量标准 ({quality_score:.3f})")
+                return True
+
+            # 情况4: 检查传统状态（向后兼容）
+            from src.utils.adk_session_manager import get_adk_session_manager
+            session_manager = get_adk_session_manager()
+            discussion_state = session_manager.get_discussion_state(discussion_id)
+            if discussion_state.get('status') in ['completed', 'dissolved', 'failed']:
+                return True
+
+            # 情况5: 超时但已进行足够轮次（至少3轮且质量达到良好）
+            if self._is_discussion_timeout_with_progress(discussion_id, progress):
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"❌ 检查讨论组完成状态失败: {e}")
+            return True  # 出错时认为已完成，避免无限等待
+
+    def _is_discussion_timeout_with_progress(self, discussion_id: str, progress: Dict[str, Any]) -> bool:
+        """检查讨论组是否超时但已有足够进度"""
+        try:
+            from src.utils.adk_session_manager import get_adk_session_manager
+            session_manager = get_adk_session_manager()
+            adk_discussions = session_manager.get_adk_discussions()
+
+            created_time_str = adk_discussions.get(discussion_id, {}).get('created_time', '')
+            if not created_time_str:
+                return False
+
+            from datetime import datetime
+            created_time = datetime.fromisoformat(created_time_str.replace('Z', '+00:00'))
+            elapsed = (datetime.now() - created_time).total_seconds()
+
+            # 超过10分钟且已进行至少3轮迭代
+            if elapsed > 600:  # 10分钟
+                current_iter = progress.get('current_iteration', 0)
+                if current_iter >= 3:
+                    logger.warning(f"⚠️ 讨论组 {discussion_id} 超时但已完成 {current_iter} 轮迭代，标记为完成")
+                    return True
+
+            # 超过15分钟无条件超时
+            if elapsed > 900:  # 15分钟
+                logger.warning(f"⚠️ 讨论组 {discussion_id} 运行超过15分钟，强制标记为完成")
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.warning(f"⚠️ 检查讨论组超时状态失败: {e}")
+            return False
+
+    async def _dissolve_completed_discussions(self, discussion_ids: List[str], multi_agent_system):
+        """解散已完成的讨论组"""
+        try:
+            if not discussion_ids:
+                return
+
+            logger.info(f"🔄 开始解散 {len(discussion_ids)} 个讨论组")
+
+            # 获取ADK官方讨论系统
+            adk_official_system = multi_agent_system.get_adk_official_discussion_system()
+            if not adk_official_system:
+                logger.warning("⚠️ ADK官方讨论系统不可用，无法解散讨论组")
+                return
+
+            dissolved_count = 0
+            for discussion_id in discussion_ids:
+                try:
+                    success = await adk_official_system.complete_discussion(discussion_id)
+                    if success:
+                        dissolved_count += 1
+                        logger.info(f"✅ 讨论组 {discussion_id} 已解散")
+                    else:
+                        logger.warning(f"⚠️ 讨论组 {discussion_id} 解散失败")
+                except Exception as e:
+                    logger.error(f"❌ 解散讨论组 {discussion_id} 时出错: {e}")
+
+            logger.info(f"📊 解散完成: {dissolved_count}/{len(discussion_ids)} 个讨论组")
+
+        except Exception as e:
+            logger.error(f"❌ 批量解散讨论组失败: {e}")
+
+    async def _force_cleanup_discussions(self, discussion_ids: List[str], multi_agent_system):
+        """强制清理讨论组"""
+        try:
+            if not discussion_ids:
+                return
+
+            logger.warning(f"🧹 强制清理 {len(discussion_ids)} 个讨论组")
+
+            # 获取ADK官方讨论系统
+            adk_official_system = multi_agent_system.get_adk_official_discussion_system()
+            if adk_official_system:
+                for discussion_id in discussion_ids:
+                    try:
+                        await adk_official_system.complete_discussion(discussion_id)
+                        logger.info(f"🧹 强制清理讨论组: {discussion_id}")
+                    except Exception as e:
+                        logger.error(f"❌ 强制清理讨论组 {discussion_id} 失败: {e}")
+
+            # 清理Session Manager中的状态
+            from src.utils.adk_session_manager import get_adk_session_manager
+            session_manager = get_adk_session_manager()
+
+            for discussion_id in discussion_ids:
+                try:
+                    session_manager.update_discussion_state(discussion_id, {
+                        'status': 'force_cleaned',
+                        'dissolved': True,
+                        'cleanup_time': datetime.now().isoformat()
+                    })
+                    session_manager.remove_adk_discussion(discussion_id)
+                except Exception as e:
+                    logger.warning(f"⚠️ 清理讨论组状态失败 {discussion_id}: {e}")
+
+        except Exception as e:
+            logger.error(f"❌ 强制清理讨论组失败: {e}")
 
     async def _collect_discussion_summaries(self, task_distribution: Dict[str, List[str]]) -> Dict[str, Any]:
         """

@@ -7,12 +7,12 @@ from .multi_agent_system import MultiAgentSystem
 from .simulation_scheduler_agent import SimulationSchedulerAgent
 from .satellite_agent import SatelliteAgent
 from .leader_agent import LeaderAgent
-from .adk_standard_discussion_system import ADKStandardDiscussionSystem
+# ADKStandardDiscussionSystem已删除，功能由ADKParallelDiscussionGroupManager替代
 
 __all__ = [
     'MultiAgentSystem',
     'SimulationSchedulerAgent',
     'SatelliteAgent', 
     'LeaderAgent',
-    'ADKStandardDiscussionSystem'
+    # 'ADKStandardDiscussionSystem' - 已删除，功能由ADKParallelDiscussionGroupManager替代
 ]

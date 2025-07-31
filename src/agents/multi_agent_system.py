@@ -25,7 +25,7 @@ from .coordination_manager import CoordinationManager
 from .meta_task_agent_integration import MetaTaskAgentIntegration
 from .optimization_calculator import OptimizationCalculator
 
-from .adk_standard_discussion_system import ADKStandardDiscussionSystem
+# ADKStandardDiscussionSystem已删除，功能由ADKParallelDiscussionGroupManager替代
 from .adk_official_discussion_system import ADKOfficialDiscussionSystem
 
 from ..utils.config_manager import get_config_manager
@@ -87,8 +87,8 @@ class MultiAgentSystem(BaseAgent):
 
 
 
-        # ADK标准讨论系统（新版本，符合官方标准）
-        self._adk_standard_discussion_system = ADKStandardDiscussionSystem("ADKStandardDiscussionSystem")
+        # ADK标准讨论系统已删除，功能由ADKParallelDiscussionGroupManager替代
+        self._adk_standard_discussion_system = None
 
         # ADK官方讨论系统（按照官方最佳实践设计）
         self._adk_official_discussion_system = ADKOfficialDiscussionSystem()
@@ -99,8 +99,8 @@ class MultiAgentSystem(BaseAgent):
 
         # 设置子智能体
         self.sub_agents = [
-            self._simulation_scheduler,
-            self._adk_standard_discussion_system
+            self._simulation_scheduler
+            # self._adk_standard_discussion_system - 已删除
         ]
 
         logger.info("🚀 多智能体系统初始化完成")
@@ -567,13 +567,8 @@ class MultiAgentSystem(BaseAgent):
     
     def get_system_status(self) -> Dict[str, Any]:
         """获取系统状态"""
-        # 获取ADK标准讨论组数量
+        # ADK标准讨论组已删除
         adk_standard_discussions_count = 0
-        if self._adk_standard_discussion_system:
-            try:
-                adk_standard_discussions_count = self._adk_standard_discussion_system.get_discussion_count()
-            except Exception as e:
-                logger.warning(f"获取ADK标准讨论组数量失败: {e}")
 
         return {
             'status': 'running' if self._is_running else 'stopped',
@@ -703,45 +698,9 @@ class MultiAgentSystem(BaseAgent):
         Returns:
             会话ID，如果创建失败则返回None
         """
-        try:
-            if not self._adk_standard_discussion_system:
-                logger.error("❌ ADK标准讨论系统未初始化")
-                return None
-
-            # 创建模拟的ADK InvocationContext
-            from google.adk.sessions import Session
-            from unittest.mock import Mock
-
-            session = Session(
-                id=f"multi_agent_session_{uuid4().hex[:8]}",
-                app_name="multi_agent_system",
-                user_id="system"
-            )
-
-            mock_ctx = Mock()
-            mock_ctx.session = session
-            mock_ctx.session.state = {}
-
-            # 使用ADK标准讨论系统创建讨论组
-            task_description = task_info.get('description', f"多智能体协同任务 - {coordination_type}模式")
-            session_id = await self._adk_standard_discussion_system.create_discussion(
-                discussion_type=coordination_type,
-                participating_agents=participating_agents,
-                task_description=task_description,
-                ctx=mock_ctx
-            )
-
-            if session_id:
-                logger.info(f"🎉 ADK标准讨论组创建成功: {session_id}")
-                logger.info(f"   任务: {task_description}")
-                logger.info(f"   参与智能体: {len(participating_agents)}个")
-                logger.info(f"   协调类型: {coordination_type}")
-
-            return session_id
-
-        except Exception as e:
-            logger.error(f"❌ 创建ADK标准讨论组失败: {e}")
-            return None
+        # ADK标准讨论系统已删除，功能由ADKParallelDiscussionGroupManager替代
+        logger.warning("⚠️ create_discussion_group方法已废弃，请使用ADKParallelDiscussionGroupManager")
+        return None
 
 
 
@@ -753,7 +712,7 @@ class MultiAgentSystem(BaseAgent):
         ctx: InvocationContext
     ) -> Optional[str]:
         """
-        创建ADK标准讨论组（符合官方设计）
+        创建ADK标准讨论组（已废弃）
 
         Args:
             discussion_type: 讨论类型 ("coordinator", "parallel", "sequential")
@@ -764,36 +723,18 @@ class MultiAgentSystem(BaseAgent):
         Returns:
             讨论ID，如果创建失败则返回None
         """
-        try:
-            if not self._adk_standard_discussion_system:
-                logger.error("❌ ADK标准讨论系统未初始化")
-                return None
+        logger.warning("⚠️ create_adk_standard_discussion方法已废弃，请使用ADKParallelDiscussionGroupManager")
+        return None
 
-            # 使用ADK标准讨论系统创建讨论组
-            discussion_id = await self._adk_standard_discussion_system.create_discussion(
-                discussion_type, participating_agents, task_description, ctx
-            )
-
-            if discussion_id:
-                logger.info(f"🎉 ADK标准讨论组创建成功: {discussion_id}")
-                logger.info(f"   类型: {discussion_type}")
-                logger.info(f"   任务: {task_description}")
-                logger.info(f"   参与智能体: {len(participating_agents)}个")
-
-            return discussion_id
-
-        except Exception as e:
-            logger.error(f"❌ 创建ADK标准讨论组失败: {e}")
-            return None
-
-    def get_adk_standard_discussion_system(self) -> ADKStandardDiscussionSystem:
+    def get_adk_standard_discussion_system(self):
         """
-        获取ADK标准讨论系统
+        获取ADK标准讨论系统（已废弃）
 
         Returns:
-            ADK标准讨论系统实例
+            None - ADK标准讨论系统已删除
         """
-        return self._adk_standard_discussion_system
+        logger.warning("⚠️ get_adk_standard_discussion_system方法已废弃，ADK标准讨论系统已删除")
+        return None
 
     def get_adk_official_discussion_system(self) -> ADKOfficialDiscussionSystem:
         """
@@ -850,14 +791,13 @@ class MultiAgentSystem(BaseAgent):
 
     def get_active_adk_standard_discussions(self, ctx: InvocationContext = None) -> Dict[str, Any]:
         """
-        获取所有活跃的ADK标准讨论组
+        获取所有活跃的ADK标准讨论组（已废弃）
 
         Args:
             ctx: ADK调用上下文（可选）
 
         Returns:
-            活跃ADK标准讨论组字典
+            空字典 - ADK标准讨论系统已删除
         """
-        if self._adk_standard_discussion_system:
-            return self._adk_standard_discussion_system.get_active_discussions(ctx)
+        logger.warning("⚠️ get_active_adk_standard_discussions方法已废弃，ADK标准讨论系统已删除")
         return {}

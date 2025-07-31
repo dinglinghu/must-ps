@@ -391,12 +391,118 @@ class SimulationSchedulerAgent(LlmAgent):
             self._constellation_manager = None
             self._meta_task_manager = None
             self._gantt_generator = None
-            
+
+            # 任务完成通知相关状态
+            self._coordination_results = []
+            self._all_discussions_completed = False
+            self._current_planning_cycle = 0
+            self._pending_tasks = set()  # 待完成的任务ID集合
+            self._completed_tasks = {}   # 已完成的任务结果
+            self._waiting_for_tasks = False  # 是否正在等待任务完成
+
+            # 注册任务完成通知回调
+            self._register_task_completion_callback()
+
             logger.info("🔧 系统组件初始化完成")
             
         except Exception as e:
             logger.error(f"❌ 系统组件初始化失败: {e}")
             raise
+
+    def _register_task_completion_callback(self):
+        """注册任务完成通知回调"""
+        try:
+            from src.utils.task_completion_notifier import register_scheduler_for_task_notifications
+
+            # 注册回调函数
+            register_scheduler_for_task_notifications(self._on_task_completed)
+
+            logger.info("✅ 任务完成通知回调已注册")
+
+        except Exception as e:
+            logger.error(f"❌ 注册任务完成通知回调失败: {e}")
+
+    async def _on_task_completed(self, completion_result):
+        """处理任务完成通知"""
+        try:
+            task_id = completion_result.task_id
+            status = completion_result.status
+
+            logger.info(f"📢 收到任务完成通知: {task_id} (状态: {status})")
+
+            # 从待完成任务集合中移除
+            if task_id in self._pending_tasks:
+                self._pending_tasks.remove(task_id)
+                logger.info(f"✅ 任务 {task_id} 已从待完成列表移除，剩余: {len(self._pending_tasks)}")
+
+            # 存储完成结果
+            self._completed_tasks[task_id] = completion_result
+
+            # 发送UI日志
+            self._send_ui_log(f"📋 任务完成: {task_id} ({status}), 质量分数: {completion_result.quality_score:.3f}")
+
+            # 检查是否所有任务都已完成
+            if len(self._pending_tasks) == 0 and self._waiting_for_tasks:
+                logger.info("🎯 所有任务已完成，可以开始下一轮规划")
+                self._all_discussions_completed = True
+                self._waiting_for_tasks = False
+
+                # 发送UI通知
+                self._send_ui_log("✅ 所有任务已完成，准备开始下一轮规划")
+
+        except Exception as e:
+            logger.error(f"❌ 处理任务完成通知失败: {e}")
+
+    async def _wait_for_all_tasks_completion(self):
+        """等待所有任务完成"""
+        try:
+            if len(self._pending_tasks) == 0:
+                logger.info("📋 没有待完成的任务，直接继续")
+                return
+
+            logger.info(f"⏳ 等待 {len(self._pending_tasks)} 个任务完成...")
+            self._waiting_for_tasks = True
+            self._all_discussions_completed = False
+
+            # 发送UI通知
+            self._send_ui_log(f"⏳ 等待 {len(self._pending_tasks)} 个任务完成...")
+
+            # 等待所有任务完成，最多等待15分钟
+            max_wait_time = 900  # 15分钟
+            check_interval = 5   # 每5秒检查一次
+            total_wait_time = 0
+
+            while total_wait_time < max_wait_time and len(self._pending_tasks) > 0:
+                await asyncio.sleep(check_interval)
+                total_wait_time += check_interval
+
+                # 显示等待进度
+                if total_wait_time % 30 == 0:  # 每30秒显示一次进度
+                    remaining_tasks = len(self._pending_tasks)
+                    completed_tasks = len(self._completed_tasks)
+
+                    progress_msg = f"⏳ 等待中... 剩余任务: {remaining_tasks}, 已完成: {completed_tasks}, 已等待: {total_wait_time}s"
+                    logger.info(progress_msg)
+                    self._send_ui_log(progress_msg)
+
+            # 检查等待结果
+            if len(self._pending_tasks) == 0:
+                logger.info(f"✅ 所有任务已完成，等待时间: {total_wait_time}s")
+                self._send_ui_log(f"✅ 所有任务已完成，等待时间: {total_wait_time}s")
+            else:
+                # 超时处理
+                timeout_tasks = list(self._pending_tasks)
+                logger.warning(f"⚠️ 等待超时，仍有 {len(timeout_tasks)} 个任务未完成: {timeout_tasks}")
+                self._send_ui_log(f"⚠️ 等待超时，强制继续下一轮规划")
+
+                # 清理超时任务
+                self._pending_tasks.clear()
+
+            self._waiting_for_tasks = False
+
+        except Exception as e:
+            logger.error(f"❌ 等待任务完成失败: {e}")
+            self._waiting_for_tasks = False
     
     def _create_tools(self) -> List[FunctionTool]:
         """创建智能体工具"""
@@ -1450,14 +1556,9 @@ class SimulationSchedulerAgent(LlmAgent):
             return f"❌ 委托创建ADK讨论组失败: {e}"
 
     def _get_active_adk_discussions(self) -> Dict[str, Any]:
-        """获取活跃的ADK标准讨论组"""
-        try:
-            if self._multi_agent_system:
-                return self._multi_agent_system.get_active_adk_standard_discussions()
-            return {}
-        except Exception as e:
-            logger.error(f"❌ 获取ADK讨论组失败: {e}")
-            return {}
+        """获取活跃的ADK标准讨论组（已废弃）"""
+        logger.warning("⚠️ _get_active_adk_discussions方法已废弃，仿真调度智能体不再管理讨论组")
+        return {}
 
     def _check_adk_discussion_status(self, discussion_id: str, discussion_info: Dict[str, Any]) -> str:
         """
@@ -1557,12 +1658,15 @@ class SimulationSchedulerAgent(LlmAgent):
             return 'failed'
 
     async def _monitor_coordination_process(self, ctx: InvocationContext) -> str:
-        """监控协同决策过程 - 等待ADK讨论组完成"""
+        """监控协同决策过程 - 使用任务完成通知机制"""
         try:
-            # 只检查ADK标准讨论组
-            adk_discussions = self._get_active_adk_discussions()
-            if not adk_discussions:
-                return "无活跃ADK讨论组，跳过协同决策"
+            # 使用新的任务完成通知机制
+            if len(self._pending_tasks) == 0:
+                logger.info("📋 没有待完成的任务，跳过协同决策监控")
+                return "无待完成任务，跳过协同决策"
+
+            logger.info(f"📊 协同决策监控: 当前有 {len(self._pending_tasks)} 个待完成任务")
+            return f"协同决策监控中，待完成任务: {len(self._pending_tasks)} 个"
 
             logger.info(f"🤝 开始监控ADK标准讨论组完成状态")
             logger.info(f"   ADK标准讨论组: {len(adk_discussions)} 个")
@@ -2284,17 +2388,17 @@ class SimulationSchedulerAgent(LlmAgent):
 
             logger.info(f"🔄 开始解散 {len(completed_discussion_ids)} 个已完成的讨论组")
 
-            # 获取ADK标准讨论系统
-            adk_standard_system = self._multi_agent_system.get_adk_standard_discussion_system()
-            if not adk_standard_system:
-                logger.warning("⚠️ ADK标准讨论系统不可用，无法解散讨论组")
+            # 获取ADK官方讨论系统（修复：使用官方系统而不是已删除的标准系统）
+            adk_official_system = self._multi_agent_system.get_adk_official_discussion_system()
+            if not adk_official_system:
+                logger.warning("⚠️ ADK官方讨论系统不可用，无法解散讨论组")
                 return
 
             dissolved_count = 0
             for discussion_id in completed_discussion_ids:
                 try:
-                    # 调用ADK标准讨论系统的解散方法
-                    success = await adk_standard_system.complete_discussion(discussion_id)
+                    # 调用ADK官方讨论系统的解散方法
+                    success = await adk_official_system.complete_discussion(discussion_id)
                     if success:
                         dissolved_count += 1
                         logger.info(f"✅ 讨论组 {discussion_id} 已解散")
