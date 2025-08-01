@@ -8,6 +8,41 @@ constellation:
   planes: 3                    # 轨道面数量
   satellites_per_plane: 3      # 每个轨道面的卫星数量
   total_satellites: 9          # 总卫星数量
+
+  # 严格的卫星命名规则配置
+  naming:
+    # 卫星命名模式：{prefix}{plane_id}{satellite_id}
+    pattern: "Satellite{plane_id}{satellite_id}"
+    prefix: "Satellite"        # 卫星名称前缀
+    plane_id_format: "{:d}"    # 轨道面ID格式：1, 2, 3
+    satellite_id_format: "{:d}" # 卫星ID格式：1, 2, 3
+
+    # 完整的卫星名称映射表（STK场景 <-> 卫星智能体）
+    satellite_mapping:
+      # 轨道面1的卫星
+      "Satellite11": "Satellite11"  # STK名称 -> 智能体名称
+      "Satellite12": "Satellite12"
+      "Satellite13": "Satellite13"
+      # 轨道面2的卫星
+      "Satellite21": "Satellite21"
+      "Satellite22": "Satellite22"
+      "Satellite23": "Satellite23"
+      # 轨道面3的卫星
+      "Satellite31": "Satellite31"
+      "Satellite32": "Satellite32"
+      "Satellite33": "Satellite33"
+
+    # 智能体ID到STK名称的反向映射
+    agent_to_stk_mapping:
+      "Satellite11": "Satellite11"
+      "Satellite12": "Satellite12"
+      "Satellite13": "Satellite13"
+      "Satellite21": "Satellite21"
+      "Satellite22": "Satellite22"
+      "Satellite23": "Satellite23"
+      "Satellite31": "Satellite31"
+      "Satellite32": "Satellite32"
+      "Satellite33": "Satellite33"
   
   # 参考卫星轨道参数（Walker星座首颗卫星参数）
   reference_satellite:
@@ -148,7 +183,7 @@ missile_management:
   # 时间配置
   time_config:
     # 发射时间偏移配置（相对于当前数据采集时刻）
-    launch_time_offset_range: [300, 3600]    # 发射时间偏移范围(秒)，5分钟到1小时
+    launch_time_offset_range: [60, 300]    # 发射时间偏移范围(秒)，5分钟到1小时
     # 飞行时间配置
     flight_time_range: [1800, 3600]          # 飞行时间范围(秒)，30分钟到1小时
     default_minutes: 30                       # 默认飞行时间(分钟)，用于估算

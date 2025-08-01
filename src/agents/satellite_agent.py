@@ -233,9 +233,23 @@ class TaskManager:
             # 关键修复：调用卫星智能体的receive_task方法来实际处理任务
             if self.satellite_agent:
                 import asyncio
-                # 在异步环境中运行任务处理
-                asyncio.create_task(self.satellite_agent.receive_task(task))
-                logger.info(f"📋 已启动任务处理流程: {task.task_id}")
+
+                # 🔧 修复：从任务中提取导弹目标信息
+                missile_target = None
+                if task.metadata:
+                    # 尝试从不同字段提取导弹目标信息
+                    if 'missile_target_names' in task.metadata:
+                        missile_names = task.metadata['missile_target_names']
+                        if missile_names and len(missile_names) > 0:
+                            missile_target = missile_names[0]  # 使用第一个导弹作为主要目标
+                    elif 'primary_target' in task.metadata:
+                        missile_target = task.metadata['primary_target']
+                    elif task.target_id and task.target_id != 'unknown':
+                        missile_target = task.target_id
+
+                # 在异步环境中运行任务处理，传递导弹目标信息
+                asyncio.create_task(self.satellite_agent.receive_task(task, missile_target))
+                logger.info(f"📋 已启动任务处理流程: {task.task_id} (目标: {missile_target})")
             else:
                 logger.warning(f"⚠️ 卫星智能体实例未设置，无法处理任务 {task.task_id}")
 
@@ -556,16 +570,278 @@ class SatelliteAgent(BaseAgent):
                 return f"资源状态更新失败: {e}"
         
         tools.append(FunctionTool(func=update_resource_status))
-        
+
+        # 自主获取导弹轨迹工具
+        async def get_missile_trajectory(missile_id: str) -> str:
+            """获取指定导弹的轨迹信息"""
+            try:
+                logger.info(f"🎯 卫星 {self.satellite_id} 自主获取导弹轨迹: {missile_id}")
+
+                # 使用STK接口获取导弹轨迹
+                if hasattr(self, '_visibility_calculator') and self._visibility_calculator:
+                    stk_manager = self._visibility_calculator.stk_manager
+                    if stk_manager and hasattr(stk_manager, 'missile_manager'):
+                        trajectory_info = stk_manager.missile_manager.get_missile_trajectory_info(missile_id)
+                        if trajectory_info:
+                            logger.info(f"✅ 成功获取导弹 {missile_id} 轨迹信息")
+                            return json.dumps({
+                                'status': 'success',
+                                'missile_id': missile_id,
+                                'trajectory': trajectory_info
+                            })
+                        else:
+                            return json.dumps({
+                                'status': 'error',
+                                'message': f'无法获取导弹 {missile_id} 轨迹信息'
+                            })
+                    else:
+                        return json.dumps({
+                            'status': 'error',
+                            'message': 'STK管理器或导弹管理器未初始化'
+                        })
+                else:
+                    return json.dumps({
+                        'status': 'error',
+                        'message': '可见性计算器未初始化'
+                    })
+
+            except Exception as e:
+                logger.error(f"❌ 获取导弹轨迹失败: {e}")
+                return json.dumps({
+                    'status': 'error',
+                    'message': f'获取导弹轨迹失败: {e}'
+                })
+
+        tools.append(FunctionTool(func=get_missile_trajectory))
+
+        # 计算卫星对导弹可见性工具
+        async def calculate_satellite_visibility(missile_id: str) -> str:
+            """计算所有卫星对指定导弹的可见性"""
+            try:
+                logger.info(f"🔍 卫星 {self.satellite_id} 计算对导弹 {missile_id} 的可见性")
+
+                if not self._visibility_calculator:
+                    return json.dumps({
+                        'status': 'error',
+                        'message': '可见性计算器未初始化'
+                    })
+
+                # 获取所有卫星ID
+                all_satellite_ids = await self._get_all_satellite_ids()
+
+                # 使用STK COM接口计算星座可见性
+                constellation_result = self._visibility_calculator.calculate_constellation_access(
+                    satellite_ids=all_satellite_ids,
+                    missile_id=missile_id
+                )
+
+                if constellation_result and not constellation_result.get('error'):
+                    logger.info(f"✅ 成功计算导弹 {missile_id} 的可见性")
+                    return json.dumps({
+                        'status': 'success',
+                        'missile_id': missile_id,
+                        'visibility_result': constellation_result
+                    })
+                else:
+                    error_msg = constellation_result.get('error', 'Unknown error') if constellation_result else 'No result'
+                    return json.dumps({
+                        'status': 'error',
+                        'message': f'可见性计算失败: {error_msg}'
+                    })
+
+            except Exception as e:
+                logger.error(f"❌ 计算可见性失败: {e}")
+                return json.dumps({
+                    'status': 'error',
+                    'message': f'计算可见性失败: {e}'
+                })
+
+        tools.append(FunctionTool(func=calculate_satellite_visibility))
+
+        # 生成元任务信息工具
+        async def generate_meta_task_info(missile_targets: str, visibility_results: str) -> str:
+            """基于导弹轨迹和可见性信息生成元任务信息"""
+            try:
+                logger.info(f"📋 卫星 {self.satellite_id} 生成元任务信息")
+
+                # 解析输入参数
+                missile_data = json.loads(missile_targets)
+                visibility_data = json.loads(visibility_results)
+
+                # 生成元任务信息
+                meta_task_info = {
+                    'task_id': f"META_TASK_{uuid4().hex[:8].upper()}",
+                    'generated_by': self.satellite_id,
+                    'generation_time': datetime.now().isoformat(),
+                    'missile_targets': missile_data,
+                    'visibility_analysis': visibility_data,
+                    'recommended_satellites': [],
+                    'task_assignments': []
+                }
+
+                # 分析可见性结果，推荐参与卫星
+                for missile_id, vis_result in visibility_data.items():
+                    if isinstance(vis_result, dict) and 'satellites_with_access' in vis_result:
+                        visible_satellites = vis_result['satellites_with_access']
+                        meta_task_info['recommended_satellites'].extend(visible_satellites)
+
+                        # 为每个导弹生成任务分配
+                        task_assignment = {
+                            'missile_id': missile_id,
+                            'assigned_satellites': visible_satellites,
+                            'task_type': 'collaborative_tracking',
+                            'priority': 'high'
+                        }
+                        meta_task_info['task_assignments'].append(task_assignment)
+
+                # 去重推荐卫星列表
+                meta_task_info['recommended_satellites'] = list(set(meta_task_info['recommended_satellites']))
+
+                logger.info(f"✅ 生成元任务信息完成，推荐 {len(meta_task_info['recommended_satellites'])} 个卫星参与")
+
+                return json.dumps({
+                    'status': 'success',
+                    'meta_task_info': meta_task_info
+                })
+
+            except Exception as e:
+                logger.error(f"❌ 生成元任务信息失败: {e}")
+                return json.dumps({
+                    'status': 'error',
+                    'message': f'生成元任务信息失败: {e}'
+                })
+
+        tools.append(FunctionTool(func=generate_meta_task_info))
+
+        # 创建基于可见性的讨论组工具
+        async def create_visibility_based_discussion_group(meta_task_info: str) -> str:
+            """基于可见性分析结果创建讨论组"""
+            try:
+                logger.info(f"🎯 卫星 {self.satellite_id} 创建基于可见性的讨论组")
+
+                # 解析元任务信息
+                task_data = json.loads(meta_task_info)
+                meta_task = task_data.get('meta_task_info', {})
+
+                # 获取推荐的卫星列表
+                recommended_satellites = meta_task.get('recommended_satellites', [])
+
+                if not recommended_satellites:
+                    return json.dumps({
+                        'status': 'error',
+                        'message': '没有推荐的卫星参与讨论组'
+                    })
+
+                # 构建讨论组创建请求
+                discussion_request = {
+                    'task_id': meta_task.get('task_id', f"DISCUSSION_{uuid4().hex[:8]}"),
+                    'task_description': f"协同处理导弹跟踪任务",
+                    'leader_satellite': self.satellite_id,
+                    'member_satellites': [sat for sat in recommended_satellites if sat != self.satellite_id],
+                    'collaboration_mode': 'iterative_refinement',
+                    'requires_visibility_analysis': True
+                }
+
+                # 调用讨论组创建方法
+                result = await self._create_adk_standard_discussion_group(
+                    task_id=discussion_request['task_id'],
+                    task_description=discussion_request['task_description'],
+                    member_satellite_ids=discussion_request['member_satellites']
+                )
+
+                if result and "成功" in result:
+                    logger.info(f"✅ 基于可见性创建讨论组成功: {len(discussion_request['member_satellites'])} 个成员")
+                    return json.dumps({
+                        'status': 'success',
+                        'discussion_group_id': discussion_request['task_id'],
+                        'leader': self.satellite_id,
+                        'members': discussion_request['member_satellites'],
+                        'total_participants': len(discussion_request['member_satellites']) + 1
+                    })
+                else:
+                    return json.dumps({
+                        'status': 'error',
+                        'message': f'讨论组创建失败: {result}'
+                    })
+
+            except Exception as e:
+                logger.error(f"❌ 创建基于可见性的讨论组失败: {e}")
+                return json.dumps({
+                    'status': 'error',
+                    'message': f'创建讨论组失败: {e}'
+                })
+
+        tools.append(FunctionTool(func=create_visibility_based_discussion_group))
+
         return tools
-    
+
+    def set_multi_agent_system(self, multi_agent_system):
+        """
+        设置多智能体系统引用
+
+        Args:
+            multi_agent_system: 多智能体系统实例
+        """
+        try:
+            object.__setattr__(self, '_multi_agent_system', multi_agent_system)
+            logger.info(f"✅ 卫星 {self.satellite_id} 已连接到多智能体系统")
+        except Exception as e:
+            logger.error(f"❌ 设置多智能体系统引用失败: {e}")
+
+    def is_connected_to_multi_agent_system(self) -> bool:
+        """
+        检查是否已连接到多智能体系统
+
+        Returns:
+            是否已连接
+        """
+        connected = hasattr(self, '_multi_agent_system') and self._multi_agent_system is not None
+        logger.debug(f"🔍 卫星 {self.satellite_id} 多智能体系统连接状态: {connected}")
+        return connected
+
+    async def _get_all_satellite_ids(self) -> List[str]:
+        """获取所有卫星ID列表"""
+        try:
+            satellite_ids = []
+
+            # 从多智能体系统获取
+            if hasattr(self, '_multi_agent_system') and self._multi_agent_system:
+                all_satellites = self._multi_agent_system.get_all_satellite_agents()
+                satellite_ids = list(all_satellites.keys())
+                logger.info(f"📡 从多智能体系统获取到 {len(satellite_ids)} 个卫星ID")
+            else:
+                # 从配置文件获取默认的Walker星座卫星ID
+                default_satellite_ids = [
+                    "Satellite11", "Satellite12", "Satellite13",
+                    "Satellite21", "Satellite22", "Satellite23",
+                    "Satellite31", "Satellite32", "Satellite33"
+                ]
+                satellite_ids = default_satellite_ids
+                logger.info(f"📡 使用默认Walker星座卫星ID: {len(satellite_ids)} 个")
+
+            return satellite_ids
+
+        except Exception as e:
+            logger.error(f"❌ 获取卫星ID列表失败: {e}")
+            return []
+
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         """
         卫星智能体主要运行逻辑
+
+        在ADK Runner环境中，ctx是真实的InvocationContext，
+        支持model_copy和并行分支，具有完整的session.state管理
         """
-        logger.info(f"[{self.name}] 卫星智能体开始运行")
-        
+        logger.info(f"[{self.name}] 卫星智能体开始运行（ADK Runner环境）")
+
         try:
+            # 0. 恢复和管理具身状态（使用真实的ADK InvocationContext）
+            await self._restore_embodied_state(ctx)
+
+            yield Event(
+                author=self.name,
+                content=types.Content(parts=[types.Part(text=f"卫星 {self.satellite_id} 具身状态已恢复")])
+            )
             # 1. 更新资源状态
             yield Event(
                 author=self.name,
@@ -612,9 +888,24 @@ class SatelliteAgent(BaseAgent):
                 content=types.Content(parts=[types.Part(text=report)]),
                 actions=EventActions(escalate=False)
             )
-            
+
+            # 保存具身状态（使用真实的ADK InvocationContext）
+            await self._save_embodied_state(ctx)
+
+            yield Event(
+                author=self.name,
+                content=types.Content(parts=[types.Part(text=f"卫星 {self.satellite_id} 具身状态已保存")])
+            )
+
         except Exception as e:
             logger.error(f"❌ 卫星智能体运行异常: {e}")
+
+            # 即使出现异常，也要尝试保存状态
+            try:
+                await self._save_embodied_state(ctx)
+            except Exception as save_error:
+                logger.error(f"❌ 保存具身状态失败: {save_error}")
+
             yield Event(
                 author=self.name,
                 content=types.Content(parts=[types.Part(text=f"运行异常: {e}")]),
@@ -667,6 +958,72 @@ class SatelliteAgent(BaseAgent):
         
         return report.strip()
     
+    async def _restore_embodied_state(self, ctx: InvocationContext):
+        """
+        从ADK InvocationContext恢复具身状态
+
+        Args:
+            ctx: 真实的ADK InvocationContext，支持session.state管理
+        """
+        try:
+            from ..utils.adk_standard_context import EmbodiedStateManager
+
+            # 使用ADK标准状态管理器
+            state_manager = EmbodiedStateManager(ctx.session)
+            embodied_state = state_manager.restore_embodied_state(self.satellite_id)
+
+            # 恢复卫星状态
+            if embodied_state:
+                self._embodied_state = embodied_state
+                logger.debug(f"✅ 卫星 {self.satellite_id} 具身状态已从ADK Session恢复")
+            else:
+                # 初始化默认状态
+                self._embodied_state = {
+                    'satellite_id': self.satellite_id,
+                    'orbital_parameters': {},
+                    'resource_status': {
+                        'power_level': self.resource_status.power_level,
+                        'payload_status': self.resource_status.payload_status
+                    },
+                    'mission_history': [],
+                    'current_tasks': [],
+                    'last_update': None
+                }
+                logger.debug(f"✅ 卫星 {self.satellite_id} 具身状态已初始化")
+
+        except Exception as e:
+            logger.error(f"❌ 恢复卫星 {self.satellite_id} 具身状态失败: {e}")
+
+    async def _save_embodied_state(self, ctx: InvocationContext):
+        """
+        保存具身状态到ADK InvocationContext
+
+        Args:
+            ctx: 真实的ADK InvocationContext，支持session.state管理
+        """
+        try:
+            from ..utils.adk_standard_context import EmbodiedStateManager
+            from datetime import datetime
+
+            # 更新当前状态
+            if hasattr(self, '_embodied_state'):
+                self._embodied_state.update({
+                    'resource_status': {
+                        'power_level': self.resource_status.power_level,
+                        'payload_status': self.resource_status.payload_status
+                    },
+                    'last_update': datetime.now().isoformat()
+                })
+
+                # 使用ADK标准状态管理器保存
+                state_manager = EmbodiedStateManager(ctx.session)
+                state_manager.save_embodied_state(self.satellite_id, self._embodied_state)
+
+                logger.debug(f"✅ 卫星 {self.satellite_id} 具身状态已保存到ADK Session")
+
+        except Exception as e:
+            logger.error(f"❌ 保存卫星 {self.satellite_id} 具身状态失败: {e}")
+
     def join_discussion_group(self, group_id: str, leader_agent: str):
         """加入讨论组"""
         self._discussion_group_id = group_id
@@ -764,7 +1121,7 @@ class SatelliteAgent(BaseAgent):
 
     async def _process_meta_task_set(self, task: TaskInfo):
         """
-        处理元任务集
+        处理元任务集 - 支持自主处理模式
 
         Args:
             task: 元任务集任务信息
@@ -772,13 +1129,21 @@ class SatelliteAgent(BaseAgent):
         try:
             logger.info(f"🎯 卫星 {self.satellite_id} 开始处理元任务集 {task.task_id}")
 
-            # 1. 计算所有卫星对所有目标的可见性窗口
-            if task.metadata.get('requires_visibility_calculation', False):
-                await self._calculate_visibility_for_all_targets(task)
+            # 检查是否为自主处理模式
+            requires_autonomous = task.metadata.get('requires_autonomous_processing', False)
 
-            # 2. 根据可见性结果动态加入讨论组
-            if task.metadata.get('requires_discussion_group', False):
-                await self._create_dynamic_discussion_group(task)
+            if requires_autonomous:
+                logger.info(f"🚀 启动自主处理模式")
+                await self._process_autonomous_meta_task(task)
+            else:
+                logger.info(f"📋 使用传统处理模式")
+                # 1. 计算所有卫星对所有目标的可见性窗口
+                if task.metadata.get('requires_visibility_calculation', False):
+                    await self._calculate_visibility_for_all_targets(task)
+
+                # 2. 根据可见性结果动态加入讨论组
+                if task.metadata.get('requires_discussion_group', False):
+                    await self._create_dynamic_discussion_group(task)
 
             # 3. 存储元任务集信息
             memory_module = MemoryModule(self.satellite_id)
@@ -788,6 +1153,222 @@ class SatelliteAgent(BaseAgent):
 
         except Exception as e:
             logger.error(f"❌ 处理元任务集失败: {e}")
+
+    async def _process_autonomous_meta_task(self, task: TaskInfo):
+        """
+        自主处理元任务 - 基于导弹目标名称自主获取信息并创建讨论组
+
+        Args:
+            task: 元任务集任务信息
+        """
+        try:
+            logger.info(f"🤖 卫星 {self.satellite_id} 开始自主处理元任务")
+
+            # 1. 从任务中获取导弹目标名称
+            missile_target_names = task.metadata.get('missile_target_names', [])
+            if not missile_target_names:
+                # 兼容旧格式
+                missile_target_names = task.metadata.get('missile_list', [])
+
+            logger.info(f"🎯 需要处理的导弹目标: {missile_target_names}")
+
+            if not missile_target_names:
+                logger.warning("⚠️ 没有找到导弹目标名称")
+                return
+
+            # 2. 为每个导弹目标自主获取轨迹信息
+            missile_trajectories = {}
+            for missile_id in missile_target_names:
+                logger.info(f"📡 自主获取导弹 {missile_id} 轨迹信息...")
+                trajectory_result = await self._autonomous_get_missile_trajectory(missile_id)
+                if trajectory_result.get('status') == 'success':
+                    missile_trajectories[missile_id] = trajectory_result['trajectory']
+                    logger.info(f"✅ 成功获取导弹 {missile_id} 轨迹")
+                else:
+                    logger.warning(f"⚠️ 获取导弹 {missile_id} 轨迹失败: {trajectory_result.get('message')}")
+
+            # 3. 计算所有卫星对所有导弹的可见性
+            visibility_results = {}
+            for missile_id in missile_target_names:
+                logger.info(f"🔍 计算对导弹 {missile_id} 的可见性...")
+                visibility_result = await self._autonomous_calculate_visibility(missile_id)
+                if visibility_result.get('status') == 'success':
+                    visibility_results[missile_id] = visibility_result['visibility_result']
+                    logger.info(f"✅ 成功计算导弹 {missile_id} 可见性")
+                else:
+                    logger.warning(f"⚠️ 计算导弹 {missile_id} 可见性失败: {visibility_result.get('message')}")
+
+            # 4. 生成元任务信息
+            logger.info(f"📋 生成元任务信息...")
+            meta_task_result = await self._autonomous_generate_meta_task_info(
+                missile_trajectories, visibility_results
+            )
+
+            if meta_task_result.get('status') == 'success':
+                meta_task_info = meta_task_result['meta_task_info']
+                logger.info(f"✅ 成功生成元任务信息")
+
+                # 5. 基于可见性结果创建讨论组
+                if task.metadata.get('requires_discussion_group', False):
+                    logger.info(f"🎯 基于可见性创建讨论组...")
+                    discussion_result = await self._autonomous_create_discussion_group(meta_task_info)
+
+                    if discussion_result.get('status') == 'success':
+                        logger.info(f"✅ 成功创建讨论组: {discussion_result.get('total_participants')} 个参与者")
+                    else:
+                        logger.warning(f"⚠️ 创建讨论组失败: {discussion_result.get('message')}")
+            else:
+                logger.error(f"❌ 生成元任务信息失败: {meta_task_result.get('message')}")
+
+            logger.info(f"🎉 自主处理元任务完成")
+
+        except Exception as e:
+            logger.error(f"❌ 自主处理元任务失败: {e}")
+            import traceback
+            logger.debug(f"详细错误: {traceback.format_exc()}")
+
+    async def _autonomous_get_missile_trajectory(self, missile_id: str) -> Dict[str, Any]:
+        """自主获取导弹轨迹信息"""
+        try:
+            if hasattr(self, '_visibility_calculator') and self._visibility_calculator:
+                stk_manager = self._visibility_calculator.stk_manager
+                if stk_manager and hasattr(stk_manager, 'missile_manager'):
+                    trajectory_info = stk_manager.missile_manager.get_missile_trajectory_info(missile_id)
+                    if trajectory_info:
+                        return {
+                            'status': 'success',
+                            'missile_id': missile_id,
+                            'trajectory': trajectory_info
+                        }
+
+            return {
+                'status': 'error',
+                'message': f'无法获取导弹 {missile_id} 轨迹信息'
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f'获取导弹轨迹失败: {e}'
+            }
+
+    async def _autonomous_calculate_visibility(self, missile_id: str) -> Dict[str, Any]:
+        """自主计算可见性"""
+        try:
+            if not self._visibility_calculator:
+                return {
+                    'status': 'error',
+                    'message': '可见性计算器未初始化'
+                }
+
+            # 获取所有卫星ID
+            all_satellite_ids = await self._get_all_satellite_ids()
+
+            # 计算星座可见性
+            constellation_result = self._visibility_calculator.calculate_constellation_access(
+                satellite_ids=all_satellite_ids,
+                missile_id=missile_id
+            )
+
+            if constellation_result and not constellation_result.get('error'):
+                return {
+                    'status': 'success',
+                    'missile_id': missile_id,
+                    'visibility_result': constellation_result
+                }
+            else:
+                error_msg = constellation_result.get('error', 'Unknown error') if constellation_result else 'No result'
+                return {
+                    'status': 'error',
+                    'message': f'可见性计算失败: {error_msg}'
+                }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f'计算可见性失败: {e}'
+            }
+
+    async def _autonomous_generate_meta_task_info(self, missile_trajectories: Dict, visibility_results: Dict) -> Dict[str, Any]:
+        """自主生成元任务信息"""
+        try:
+            meta_task_info = {
+                'task_id': f"META_TASK_{uuid4().hex[:8].upper()}",
+                'generated_by': self.satellite_id,
+                'generation_time': datetime.now().isoformat(),
+                'missile_targets': missile_trajectories,
+                'visibility_analysis': visibility_results,
+                'recommended_satellites': [],
+                'task_assignments': []
+            }
+
+            # 分析可见性结果，推荐参与卫星
+            for missile_id, vis_result in visibility_results.items():
+                if isinstance(vis_result, dict) and 'satellites_with_access' in vis_result:
+                    visible_satellites = vis_result['satellites_with_access']
+                    meta_task_info['recommended_satellites'].extend(visible_satellites)
+
+                    # 为每个导弹生成任务分配
+                    task_assignment = {
+                        'missile_id': missile_id,
+                        'assigned_satellites': visible_satellites,
+                        'task_type': 'collaborative_tracking',
+                        'priority': 'high'
+                    }
+                    meta_task_info['task_assignments'].append(task_assignment)
+
+            # 去重推荐卫星列表
+            meta_task_info['recommended_satellites'] = list(set(meta_task_info['recommended_satellites']))
+
+            return {
+                'status': 'success',
+                'meta_task_info': meta_task_info
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f'生成元任务信息失败: {e}'
+            }
+
+    async def _autonomous_create_discussion_group(self, meta_task_info: Dict) -> Dict[str, Any]:
+        """自主创建基于可见性的讨论组"""
+        try:
+            # 获取推荐的卫星列表
+            recommended_satellites = meta_task_info.get('recommended_satellites', [])
+
+            if not recommended_satellites:
+                return {
+                    'status': 'error',
+                    'message': '没有推荐的卫星参与讨论组'
+                }
+
+            # 构建讨论组创建请求
+            task_id = meta_task_info.get('task_id', f"DISCUSSION_{uuid4().hex[:8]}")
+            member_satellites = [sat for sat in recommended_satellites if sat != self.satellite_id]
+
+            # 调用讨论组创建方法
+            result = await self._create_adk_standard_discussion_group(
+                task_id=task_id,
+                task_description=f"协同处理导弹跟踪任务",
+                member_satellite_ids=member_satellites
+            )
+
+            if result and "成功" in result:
+                return {
+                    'status': 'success',
+                    'discussion_group_id': task_id,
+                    'leader': self.satellite_id,
+                    'members': member_satellites,
+                    'total_participants': len(member_satellites) + 1
+                }
+            else:
+                return {
+                    'status': 'error',
+                    'message': f'讨论组创建失败: {result}'
+                }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'message': f'创建讨论组失败: {e}'
+            }
 
     async def _calculate_visibility_for_all_targets(self, task: TaskInfo):
         """
@@ -926,21 +1507,53 @@ class SatelliteAgent(BaseAgent):
             导弹ID字符串或None
         """
         try:
-            # 从任务元数据中提取导弹轨迹信息
-            if task.metadata and 'missile_trajectories' in task.metadata:
-                trajectories = task.metadata['missile_trajectories']
-                if trajectories and len(trajectories) > 0:
-                    # 使用第一个导弹的ID
-                    first_missile = trajectories[0]
-                    missile_id = first_missile.get('missile_id')
-                    if missile_id:
-                        logger.debug(f"从任务元数据中提取到导弹ID: {missile_id}")
+            # 🔧 修复：优先从target_id获取主要目标
+            if task.target_id and task.target_id != 'unknown' and task.target_id != 'multi_missile_targets':
+                logger.debug(f"从任务target_id中提取到导弹ID: {task.target_id}")
+                return task.target_id
+
+            # 从任务元数据中提取导弹目标名称（新格式）
+            if task.metadata:
+                # 优先使用missile_target_names
+                if 'missile_target_names' in task.metadata:
+                    missile_target_names = task.metadata['missile_target_names']
+                    if missile_target_names and len(missile_target_names) > 0:
+                        missile_id = missile_target_names[0]  # 使用第一个导弹作为主要目标
+                        logger.debug(f"从missile_target_names中提取到导弹ID: {missile_id}")
                         return missile_id
 
-            # 尝试从任务目标ID中提取
-            if task.target_id:
-                logger.debug(f"使用任务目标ID作为导弹ID: {task.target_id}")
-                return task.target_id
+                # 兼容primary_target字段
+                if 'primary_target' in task.metadata:
+                    primary_target = task.metadata['primary_target']
+                    if primary_target and primary_target != 'unknown':
+                        logger.debug(f"从primary_target中提取到导弹ID: {primary_target}")
+                        return primary_target
+
+                # 兼容旧格式：从导弹轨迹信息中提取
+                if 'missile_trajectories' in task.metadata:
+                    trajectories = task.metadata['missile_trajectories']
+                    if trajectories and len(trajectories) > 0:
+                        # 使用第一个导弹的ID
+                        first_missile = trajectories[0]
+                        missile_id = first_missile.get('missile_id')
+                        if missile_id:
+                            logger.debug(f"从missile_trajectories中提取到导弹ID: {missile_id}")
+                            return missile_id
+
+                # 兼容missile_list格式
+                if 'missile_list' in task.metadata:
+                    missile_list = task.metadata['missile_list']
+                    if missile_list and len(missile_list) > 0:
+                        if isinstance(missile_list[0], dict):
+                            missile_id = missile_list[0].get('missile_id')
+                            if missile_id:
+                                logger.debug(f"从missile_list中提取到导弹ID: {missile_id}")
+                                return missile_id
+                        else:
+                            # 简单字符串列表
+                            missile_id = missile_list[0]
+                            logger.debug(f"从missile_list中提取到导弹ID: {missile_id}")
+                            return missile_id
 
             logger.warning("⚠️ 无法从任务信息中提取导弹ID")
             return None
@@ -1024,31 +1637,24 @@ class SatelliteAgent(BaseAgent):
             participating_agents = [self] + member_satellites
 
             # 获取多智能体系统引用
-            if not hasattr(self, '_multi_agent_system') or not self._multi_agent_system:
+            if not self.is_connected_to_multi_agent_system():
                 logger.error("❌ 多智能体系统未连接，无法创建ADK标准讨论组")
+                logger.error("   请确保卫星智能体已正确注册到多智能体系统")
+                logger.error(f"   当前卫星 {self.satellite_id} 连接状态: {hasattr(self, '_multi_agent_system')}")
+                if hasattr(self, '_multi_agent_system'):
+                    logger.error(f"   多智能体系统实例: {self._multi_agent_system is not None}")
                 return
 
-            # 创建简化的ADK上下文
-            from google.adk.sessions import Session
+            # 在ADK Runner环境中，InvocationContext由框架自动提供
+            # 这里创建一个临时的session用于状态管理
+            from ..utils.adk_standard_context import create_satellite_session
 
-            session = Session(
-                id=f"satellite_session_{self.satellite_id}_{task.task_id}",
-                app_name="satellite_agent",
-                user_id=self.satellite_id
-            )
+            ctx = create_satellite_session(self.satellite_id, task.task_id)
 
-            # 创建简化的上下文对象
-            class SimpleContext:
-                def __init__(self, session):
-                    self.session = session
-                    self.session.state = {}
-
-            ctx = SimpleContext(session)
-
-            # 使用ADK官方讨论系统创建讨论组 - 增强型迭代优化模式
-            task_description = f"卫星协同任务 - {task.task_id} (目标: {task.target_id}) - 组长迭代优化决策 + 组员并发仿真验证"
+            # 使用ADK官方讨论系统创建讨论组 - 迭代优化模式
+            task_description = f"卫星协同任务 - {task.task_id} (目标: {task.target_id}) - 迭代优化决策 + 并发仿真验证"
             discussion_id = await self._multi_agent_system.create_adk_official_discussion(
-                pattern_type="enhanced_iterative_refinement",  # 增强型迭代优化：组长迭代优化 + 组员并发仿真
+                pattern_type="iterative_refinement",  # ADK官方迭代优化模式：并发执行 + 迭代优化
                 participating_agents=participating_agents,
                 task_description=task_description,
                 ctx=ctx
@@ -1153,12 +1759,19 @@ class SatelliteAgent(BaseAgent):
 
             member_satellites = []
 
-            # 使用STK COM接口查找有可见窗口的卫星
-            if self._visibility_calculator and missile_target:
+            # 🔧 修复：优化可见性计算逻辑
+            if self._visibility_calculator:
                 # 从任务元数据中提取导弹ID
                 missile_id = self._extract_missile_id_from_task(task)
 
-                if missile_id:
+                # 如果没有传递missile_target参数，尝试从任务中提取
+                if not missile_target and missile_id:
+                    missile_target = missile_id
+                    logger.info(f"🎯 从任务中提取导弹目标: {missile_target}")
+
+                if missile_target and missile_id:
+                    logger.info(f"🔍 使用STK COM接口计算可见性: {missile_id}")
+
                     # 获取所有可用卫星ID
                     all_satellite_ids = await self._get_all_satellite_ids()
 
@@ -1181,15 +1794,64 @@ class SatelliteAgent(BaseAgent):
                             logger.info(f"   成员卫星: {sat.satellite_id}")
                     else:
                         logger.warning(f"⚠️ STK可见性计算失败: {constellation_result.get('error', 'Unknown error')}")
+                        logger.info(f"💡 将使用默认成员选择策略")
                 else:
-                    logger.warning("⚠️ 无法提取导弹ID信息，使用默认成员选择")
+                    if not missile_target:
+                        logger.warning("⚠️ 缺少导弹目标信息，使用默认成员选择")
+                    if not missile_id:
+                        logger.warning("⚠️ 无法提取导弹ID信息，使用默认成员选择")
             else:
-                logger.warning("⚠️ 可见窗口计算器未初始化或缺少导弹目标信息，使用默认成员选择")
+                logger.warning("⚠️ 可见窗口计算器未初始化，使用默认成员选择")
+
+            # 🔧 新增：如果没有找到成员卫星，使用默认选择策略
+            if len(member_satellites) == 0:
+                logger.info(f"🔄 启用默认成员选择策略")
+                member_satellites = await self._select_default_members(task)
 
             return member_satellites
 
         except Exception as e:
             logger.error(f"❌ 查找成员卫星失败: {e}")
+            return []
+
+    async def _select_default_members(self, task: TaskInfo) -> List['SatelliteAgent']:
+        """
+        默认成员选择策略
+        当可见性计算失败时，选择部分卫星作为讨论组成员
+
+        Args:
+            task: 任务信息
+
+        Returns:
+            默认选择的成员卫星列表
+        """
+        try:
+            logger.info(f"🔄 执行默认成员选择策略")
+
+            # 获取系统中所有卫星智能体
+            if not self.is_connected_to_multi_agent_system():
+                logger.warning("⚠️ 多智能体系统未连接，无法获取其他卫星")
+                return []
+
+            all_satellites = self._multi_agent_system.get_all_satellite_agents()
+
+            # 排除自己
+            other_satellites = [sat for sat_id, sat in all_satellites.items() if sat_id != self.satellite_id]
+
+            logger.info(f"📊 可选择的其他卫星数量: {len(other_satellites)}")
+
+            # 默认选择策略：选择前2-3个卫星作为成员
+            max_members = min(3, len(other_satellites))  # 最多选择3个成员
+            selected_members = other_satellites[:max_members]
+
+            logger.info(f"✅ 默认选择了 {len(selected_members)} 个成员卫星:")
+            for sat in selected_members:
+                logger.info(f"   默认成员: {sat.satellite_id}")
+
+            return selected_members
+
+        except Exception as e:
+            logger.error(f"❌ 默认成员选择失败: {e}")
             return []
 
 
@@ -1273,18 +1935,28 @@ class SatelliteAgent(BaseAgent):
 
             logger.info(f"🔍 尝试获取 {len(satellite_ids)} 个卫星智能体实例")
 
+            # 检查多智能体系统连接状态
+            if not self.is_connected_to_multi_agent_system():
+                logger.error("❌ 多智能体系统未连接，无法获取其他卫星智能体")
+                logger.error("   请确保卫星智能体已正确注册到多智能体系统")
+                return []
+
             # 从多智能体系统中获取卫星智能体实例
-            if hasattr(self, '_multi_agent_system') and self._multi_agent_system:
-                for satellite_id in satellite_ids:
-                    # 尝试从多智能体系统获取卫星智能体
-                    satellite_agent = self._multi_agent_system.get_satellite_agent(satellite_id)
-                    if satellite_agent:
-                        satellite_agents.append(satellite_agent)
-                        logger.info(f"   ✅ 找到卫星智能体: {satellite_id}")
-                    else:
-                        logger.warning(f"   ⚠️ 未找到卫星智能体: {satellite_id}")
-            else:
-                logger.warning("⚠️ 多智能体系统未设置，无法获取其他卫星智能体")
+            logger.debug(f"📡 多智能体系统类型: {type(self._multi_agent_system).__name__}")
+
+            # 获取系统中所有可用的卫星智能体
+            all_available_satellites = self._multi_agent_system.get_all_satellite_agents()
+            logger.info(f"📡 系统中可用的卫星智能体: {list(all_available_satellites.keys())}")
+
+            for satellite_id in satellite_ids:
+                # 尝试从多智能体系统获取卫星智能体
+                satellite_agent = self._multi_agent_system.get_satellite_agent(satellite_id)
+                if satellite_agent:
+                    satellite_agents.append(satellite_agent)
+                    logger.info(f"   ✅ 找到卫星智能体: {satellite_id}")
+                else:
+                    logger.warning(f"   ⚠️ 未找到卫星智能体: {satellite_id}")
+                    logger.debug(f"      可用的卫星: {list(all_available_satellites.keys())}")
 
             logger.info(f"✅ 成功获取 {len(satellite_agents)} 个卫星智能体实例")
             return satellite_agents
@@ -1410,27 +2082,23 @@ class SatelliteAgent(BaseAgent):
 
     def _create_mock_invocation_context(self):
         """
-        创建模拟的ADK InvocationContext
+        创建标准ADK Session
 
-        在实际ADK环境中，这个context会由框架提供
-        这里创建一个简化的模拟版本用于测试
+        根据ADK官方文档，使用标准方式创建Session用于状态管理
 
         Returns:
-            模拟的InvocationContext
+            ADK Session实例
         """
         try:
-            # 创建一个简化的session对象
-            class MockSession:
-                def __init__(self):
-                    self.state = {}
+            from ..utils.adk_standard_context import create_standard_session
 
-            # 创建一个简化的context对象
-            class MockInvocationContext:
-                def __init__(self):
-                    self.session = MockSession()
-
-            return MockInvocationContext()
+            session_id = f"satellite_mock_{self.satellite_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            return create_standard_session(
+                app_name="satellite_agent",
+                user_id=self.satellite_id,
+                session_id=session_id
+            )
 
         except Exception as e:
-            logger.error(f"❌ 创建模拟InvocationContext失败: {e}")
+            logger.error(f"❌ 创建ADK Session失败: {e}")
             return None

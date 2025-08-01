@@ -6,14 +6,21 @@
 from .simulation_scheduler_agent import SimulationSchedulerAgent
 from .satellite_agent import SatelliteAgent
 from .leader_agent import LeaderAgent
-from .agent_tools import VisibilityCalculatorTool, OptimizationCalculatorTool
 from .coordination_manager import CoordinationManager
+from .optimization_calculator import OptimizationCalculator
+from .meta_task_agent_integration import MetaTaskAgentIntegration
+from .missile_target_distributor import MissileTargetDistributor
+from .satellite_agent_factory import SatelliteAgentFactory
+from .multi_agent_system import MultiAgentSystem
 
 __all__ = [
+    'MultiAgentSystem',
     'SimulationSchedulerAgent',
-    'SatelliteAgent', 
+    'SatelliteAgent',
     'LeaderAgent',
-    'VisibilityCalculatorTool',
-    'OptimizationCalculatorTool',
-    'CoordinationManager'
+    'CoordinationManager',
+    'OptimizationCalculator',
+    'MetaTaskAgentIntegration',
+    'MissileTargetDistributor',
+    'SatelliteAgentFactory'
 ]

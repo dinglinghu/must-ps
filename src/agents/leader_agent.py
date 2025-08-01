@@ -100,9 +100,6 @@ class LeaderAgent(LlmAgent):
             config: 配置参数
             config_path: 配置文件路径
         """
-        self.target_id = target_id
-        self.config = config or {}
-
         # 初始化大模型配置管理器
         llm_config_mgr = get_llm_config_manager(config_path or "config/config.yaml")
 
@@ -129,6 +126,10 @@ class LeaderAgent(LlmAgent):
             tools=[],  # 稍后设置工具
             sub_agents=[]  # 子智能体将动态添加
         )
+
+        # 在super().__init__()之后设置自定义属性
+        object.__setattr__(self, 'target_id', target_id)
+        object.__setattr__(self, 'config', config or {})
         
         # 讨论组状态
         self.discussion_group = None
@@ -160,19 +161,14 @@ class LeaderAgent(LlmAgent):
                 if not hasattr(self, '_multi_agent_system') or not self._multi_agent_system:
                     return "❌ 多智能体系统未连接，无法创建ADK标准讨论组"
 
-                # 创建模拟的ADK InvocationContext
-                from google.adk.sessions import Session
-                from unittest.mock import Mock
+                # 使用标准ADK上下文创建工具
+                from ..utils.adk_standard_context import create_standard_session
 
-                session = Session(
-                    id=f"leader_session_{self.target_id}",
+                mock_ctx = create_standard_session(
                     app_name="leader_agent",
-                    user_id=self.name
+                    user_id=self.name,
+                    session_id=f"leader_session_{self.target_id}"
                 )
-
-                mock_ctx = Mock()
-                mock_ctx.session = session
-                mock_ctx.session.state = {}
 
                 # 使用ADK标准讨论系统创建讨论组
                 task_description = f"组长智能体任务 - 目标: {self.target_id}"

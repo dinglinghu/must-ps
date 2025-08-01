@@ -83,6 +83,36 @@ class SatelliteAgentFactory:
         self._multi_agent_system = multi_agent_system
         logger.info("✅ 卫星智能体工厂已设置多智能体系统引用")
 
+    def get_satellite_agent(self, satellite_id: str) -> Optional[SatelliteAgent]:
+        """
+        获取已创建的卫星智能体
+
+        Args:
+            satellite_id: 卫星ID
+
+        Returns:
+            卫星智能体实例，如果不存在则返回None
+        """
+        return self._satellite_agents.get(satellite_id)
+
+    def get_all_satellite_agents(self) -> Dict[str, SatelliteAgent]:
+        """
+        获取所有已创建的卫星智能体
+
+        Returns:
+            卫星智能体字典
+        """
+        return self._satellite_agents.copy()
+
+    def get_satellite_count(self) -> int:
+        """
+        获取已创建的卫星智能体数量
+
+        Returns:
+            卫星智能体数量
+        """
+        return len(self._satellite_agents)
+
     async def create_satellite_agents_from_walker_constellation(
         self,
         constellation_manager: ConstellationManager,

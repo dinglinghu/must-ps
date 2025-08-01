@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 import sys
 import uuid
+import concurrent.futures
+import functools
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent.parent
@@ -67,6 +69,9 @@ class ADKDevUI:
             'sessions': {},
             'logs': []
         }
+
+        # 线程池执行器，用于处理可能的异步操作
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         
         # 设置路由
         self._setup_routes()
@@ -131,16 +136,31 @@ class ADKDevUI:
             try:
                 config_path = request.json.get('config_path', 'config/config.yaml')
                 output_dir = request.json.get('output_dir', 'output')
-                
-                self.multi_agent_system = MultiAgentSystem(
-                    config_path=config_path,
-                    output_dir=output_dir
-                )
-                
+
+                # 在线程池中创建多智能体系统，避免事件循环冲突
+                def create_system_safe():
+                    """在独立线程中安全创建系统"""
+                    try:
+                        # 确保在新线程中没有事件循环冲突
+                        return MultiAgentSystem(
+                            config_path=config_path,
+                            output_dir=output_dir
+                        )
+                    except Exception as e:
+                        logger.error(f"线程中创建系统失败: {e}")
+                        raise
+
+                # 使用线程池执行器
+                future = self.executor.submit(create_system_safe)
+                self.multi_agent_system = future.result(timeout=30)  # 30秒超时
+
                 self.system_status['is_running'] = True
                 self._log_message("系统启动成功")
-                
+
                 return jsonify({'success': True, 'message': '系统启动成功'})
+            except concurrent.futures.TimeoutError:
+                self._log_message("系统启动超时", level='error')
+                return jsonify({'success': False, 'error': '系统启动超时'})
             except Exception as e:
                 self._log_message(f"系统启动失败: {e}", level='error')
                 return jsonify({'success': False, 'error': str(e)})
@@ -835,11 +855,23 @@ class ADKDevUI:
 
         # 记录到系统日志
         self._log_message(f"📋 任务规划 [{phase}] {step}: {description}")
-    
+
+    def cleanup(self):
+        """清理资源"""
+        try:
+            if hasattr(self, 'executor'):
+                self.executor.shutdown(wait=True)
+                logger.info("✅ 线程池执行器已关闭")
+        except Exception as e:
+            logger.error(f"❌ 清理资源失败: {e}")
+
     def run(self, debug: bool = False):
         """运行开发UI服务器"""
         logger.info(f"🚀 启动ADK开发UI服务器: http://{self.host}:{self.port}")
-        self.socketio.run(self.app, host=self.host, port=self.port, debug=debug)
+        try:
+            self.socketio.run(self.app, host=self.host, port=self.port, debug=debug)
+        finally:
+            self.cleanup()
 
 
 def main():

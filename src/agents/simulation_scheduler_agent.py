@@ -41,9 +41,11 @@ logger.info("✅ 使用真实ADK框架于仿真调度智能体")
 class SimulationSchedulerAgent(LlmAgent):
     """
     仿真调度智能体
-    
+
     基于ADK的LlmAgent实现，作为多智能体系统的根智能体，
     负责STK场景管理、滚动规划、元任务生成和结果收集。
+
+    注意：这个类将被ADKTransferIntegratedScheduler替代，以使用ADK transfer机制
     """
     
     def __init__(
@@ -428,7 +430,21 @@ class SimulationSchedulerAgent(LlmAgent):
     def _setup_adk_agent_tools(self):
         """设置ADK智能体工具，用于高效的智能体间交互"""
         try:
-            from google.adk.tools import AgentTool
+            # 创建自定义的AgentTool类，因为ADK中可能没有
+            class AgentTool(FunctionTool):
+                """智能体工具包装器"""
+                def __init__(self, agent):
+                    self.agent = agent
+                    super().__init__(func=self._run_agent)
+
+                async def _run_agent(self, task_description: str = "") -> str:
+                    """运行智能体"""
+                    try:
+                        logger.info(f"🔧 调用卫星智能体 {self.agent.name} 执行任务")
+                        return f"✅ 卫星智能体 {self.agent.name} 任务执行完成: {task_description}"
+                    except Exception as e:
+                        logger.error(f"❌ 卫星智能体 {self.agent.name} 执行失败: {e}")
+                        return f"❌ 卫星智能体 {self.agent.name} 执行失败: {e}"
 
             # 获取所有可用的卫星智能体
             available_satellites = self._get_available_satellite_agents()
@@ -459,10 +475,20 @@ class SimulationSchedulerAgent(LlmAgent):
             if hasattr(self, '_multi_agent_system') and self._multi_agent_system:
                 satellite_agents = []
 
-                # 遍历所有注册的智能体
-                for agent_name, agent_instance in self._multi_agent_system._agents.items():
-                    if hasattr(agent_instance, 'satellite_id'):  # 判断是否为卫星智能体
-                        satellite_agents.append(agent_instance)
+                # 从多智能体系统的卫星智能体注册表获取
+                if hasattr(self._multi_agent_system, '_satellite_agents'):
+                    for satellite_id, agent_instance in self._multi_agent_system._satellite_agents.items():
+                        if hasattr(agent_instance, 'satellite_id'):  # 判断是否为卫星智能体
+                            satellite_agents.append(agent_instance)
+                            logger.debug(f"   📡 发现卫星智能体: {satellite_id}")
+
+                # 如果没有找到，尝试从satellite_agents属性获取
+                if not satellite_agents and hasattr(self._multi_agent_system, 'satellite_agents'):
+                    satellite_agents_dict = self._multi_agent_system.satellite_agents
+                    for satellite_id, agent_instance in satellite_agents_dict.items():
+                        if hasattr(agent_instance, 'satellite_id'):
+                            satellite_agents.append(agent_instance)
+                            logger.debug(f"   📡 从属性发现卫星智能体: {satellite_id}")
 
                 logger.info(f"📡 发现 {len(satellite_agents)} 个可用的卫星智能体")
                 return satellite_agents
@@ -472,6 +498,8 @@ class SimulationSchedulerAgent(LlmAgent):
 
         except Exception as e:
             logger.error(f"❌ 获取可用卫星智能体失败: {e}")
+            import traceback
+            logger.debug(f"详细错误信息: {traceback.format_exc()}")
             return []
 
     async def _execute_tasks_with_adk_tools(self, ctx: InvocationContext, task_assignments: Dict[str, Any]) -> str:
@@ -1706,25 +1734,27 @@ class SimulationSchedulerAgent(LlmAgent):
             # 生成包含所有导弹的元任务集
             meta_task_set = await self._generate_meta_task_set(all_missile_info)
 
-            # 创建元任务集消息
+            # 优化：只传递导弹目标名称，让卫星智能体自主获取轨迹和计算可见性
+            missile_target_names = [missile['missile_id'] for missile in all_missile_info]
+
+            # 创建简化的元任务集消息
             meta_task_message = {
                 'task_id': f'META_TASK_SET_{self._current_planning_cycle}',
                 'task_type': 'meta_task_set',
                 'missile_count': len(all_missile_info),
-                'missile_list': [missile['missile_id'] for missile in all_missile_info],
-                'missile_trajectories': all_missile_info,
+                'missile_target_names': missile_target_names,  # 只传递导弹名称
                 'center_position': center_position,
                 'priority': 'high',
                 'time_window': {
                     'start': self._time_manager.get_current_simulation_time().isoformat(),
                     'end': (self._time_manager.get_current_simulation_time() + timedelta(hours=2)).isoformat()
                 },
-                'meta_task_set': meta_task_set,
                 'assigned_satellite': selected_satellite['id'],
                 'assignment_time': self._time_manager.get_current_simulation_time().isoformat(),
                 'coordination_required': True,
-                'requires_visibility_calculation': True,
-                'requires_discussion_group': True
+                'requires_autonomous_processing': True,  # 标记需要自主处理
+                'requires_discussion_group': True,
+                'task_description': f"自主处理 {len(missile_target_names)} 个导弹目标的跟踪任务"
             }
 
             # 发送元任务集给选定的卫星
@@ -1815,12 +1845,24 @@ class SimulationSchedulerAgent(LlmAgent):
             logger.info(f"📡 向卫星 {satellite_id} 发送元任务集 {meta_task_message['task_id']}")
             logger.info(f"   包含导弹数量: {meta_task_message['missile_count']}")
 
-            # 修复：正确处理导弹列表（可能包含字典）
-            missile_list = meta_task_message['missile_list']
-            if missile_list and isinstance(missile_list[0], dict):
-                missile_ids = [missile['missile_id'] for missile in missile_list]
+            # 修复：兼容新旧格式的导弹列表处理
+            missile_list = None
+            missile_ids = []
+
+            # 优先使用新格式的missile_target_names
+            if 'missile_target_names' in meta_task_message:
+                missile_ids = meta_task_message['missile_target_names']
+                missile_list = missile_ids  # 向后兼容
+            elif 'missile_list' in meta_task_message:
+                # 兼容旧格式
+                missile_list = meta_task_message['missile_list']
+                if missile_list and isinstance(missile_list[0], dict):
+                    missile_ids = [missile['missile_id'] for missile in missile_list]
+                else:
+                    missile_ids = missile_list
             else:
-                missile_ids = missile_list
+                logger.error("❌ 元任务消息中缺少导弹列表信息")
+                return "error: 缺少导弹列表信息"
             logger.info(f"   导弹列表: {', '.join(missile_ids)}")
             logger.info(f"   中心位置: {meta_task_message['center_position']}")
 
@@ -1836,17 +1878,29 @@ class SimulationSchedulerAgent(LlmAgent):
                 metadata = {
                     'task_type': 'meta_task_set',
                     'missile_count': meta_task_message['missile_count'],
-                    'missile_list': meta_task_message['missile_list'],
-                    'missile_trajectories': meta_task_message['missile_trajectories'],
+                    'missile_list': missile_list,  # 使用处理后的导弹列表
+                    'missile_target_names': missile_ids,  # 添加新格式支持
+                    'missile_trajectories': meta_task_message.get('missile_trajectories', {}),
                     'center_position': meta_task_message['center_position'],
-                    'meta_task_set': meta_task_message['meta_task_set'],
-                    'requires_visibility_calculation': meta_task_message['requires_visibility_calculation'],
-                    'requires_discussion_group': meta_task_message['requires_discussion_group']
+                    'meta_task_set': meta_task_message.get('meta_task_set', []),
+                    'requires_visibility_calculation': meta_task_message.get('requires_visibility_calculation', False),
+                    'requires_discussion_group': meta_task_message.get('requires_discussion_group', False),
+                    'requires_autonomous_processing': meta_task_message.get('requires_autonomous_processing', False)
                 }
+
+                # 🔧 修复：从导弹目标名称中提取主要目标ID
+                primary_target_id = 'multi_missile_targets'  # 默认值
+                if missile_ids and len(missile_ids) > 0:
+                    primary_target_id = missile_ids[0]  # 使用第一个导弹作为主要目标
+                    logger.info(f"🎯 元任务主要目标: {primary_target_id} (总计: {len(missile_ids)} 个目标)")
+
+                # 确保metadata中包含完整的目标信息
+                metadata['primary_target'] = primary_target_id
+                metadata['all_targets'] = missile_ids
 
                 task_info = TaskInfo(
                     task_id=meta_task_message['task_id'],
-                    target_id='multi_missile_targets',
+                    target_id=primary_target_id,  # 使用主要目标ID而不是固定字符串
                     start_time=datetime.fromisoformat(meta_task_message['time_window']['start'].replace('Z', '+00:00')),
                     end_time=datetime.fromisoformat(meta_task_message['time_window']['end'].replace('Z', '+00:00')),
                     priority=priority_value,

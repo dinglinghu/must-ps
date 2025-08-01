@@ -18,10 +18,9 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
 
 # 导入核心组件
-from core.agents import MultiAgentSystem
-from core.planning import RollingPlanningCycleManager
-from core.constellation import ConstellationManager, SatelliteAgentFactory
-from core.utils import get_config_manager, get_time_manager
+from src.agents import MultiAgentSystem
+from src.utils import get_config_manager, get_time_manager
+from src.constellation import ConstellationManager
 from ui.adk_monitoring_ui import ADKMonitoringUI
 
 # 设置日志
@@ -43,7 +42,7 @@ class ConstellationSystemLauncher:
         self.config_manager = None
         self.time_manager = None
         self.multi_agent_system = None
-        self.planning_manager = None
+
         self.constellation_manager = None
         self.monitoring_ui = None
         self.is_running = False
@@ -64,17 +63,14 @@ class ConstellationSystemLauncher:
             # 3. 初始化多智能体系统
             logger.info("3. 初始化多智能体系统...")
             self.multi_agent_system = MultiAgentSystem(self.config_manager)
-            
-            # 4. 初始化滚动规划管理器
-            logger.info("4. 初始化滚动规划管理器...")
-            self.planning_manager = RollingPlanningCycleManager(
-                config_manager=self.config_manager,
-                time_manager=self.time_manager
-            )
-            
-            # 5. 初始化星座管理器
-            logger.info("5. 初始化星座管理器...")
-            self.constellation_manager = ConstellationManager(self.config_manager)
+
+            # 4. 初始化星座管理器
+            logger.info("4. 初始化星座管理器...")
+            self.constellation_manager = ConstellationManager(None, self.config_manager)
+
+            # 5. 初始化卫星智能体工厂并连接到多智能体系统
+            logger.info("5. 初始化卫星智能体工厂...")
+            await self._initialize_satellite_factory()
             
             # 6. 初始化监控UI
             logger.info("6. 初始化监控UI...")
@@ -86,6 +82,34 @@ class ConstellationSystemLauncher:
         except Exception as e:
             logger.error(f"❌ 系统初始化失败: {e}")
             return False
+
+    async def _initialize_satellite_factory(self):
+        """初始化卫星智能体工厂并创建智能体池"""
+        try:
+            from src.agents.satellite_agent_factory import SatelliteAgentFactory
+
+            # 创建卫星智能体工厂
+            self.satellite_factory = SatelliteAgentFactory(self.config_manager)
+
+            # 设置多智能体系统引用
+            self.satellite_factory.set_multi_agent_system(self.multi_agent_system)
+
+            # 将工厂引用设置到多智能体系统
+            self.multi_agent_system.set_satellite_factory(self.satellite_factory)
+
+            # 从Walker星座创建智能体池
+            satellite_agents = await self.satellite_factory.create_satellite_agents_from_walker_constellation(
+                self.constellation_manager
+            )
+
+            if satellite_agents:
+                logger.info(f"✅ 卫星智能体工厂创建了 {len(satellite_agents)} 个智能体")
+            else:
+                logger.warning("⚠️ 卫星智能体工厂未创建任何智能体")
+
+        except Exception as e:
+            logger.error(f"❌ 初始化卫星智能体工厂失败: {e}")
+            raise
     
     async def start_system(self) -> bool:
         """启动系统"""
@@ -99,15 +123,8 @@ class ConstellationSystemLauncher:
                 logger.error("多智能体系统启动失败")
                 return False
             
-            # 2. 启动滚动规划
-            logger.info("2. 启动滚动任务规划...")
-            success = await self.planning_manager.start_rolling_planning()
-            if not success:
-                logger.error("滚动规划启动失败")
-                return False
-            
-            # 3. 启动监控UI
-            logger.info("3. 启动监控UI...")
+            # 2. 启动监控UI
+            logger.info("2. 启动监控UI...")
             self.monitoring_ui.start_monitoring()
             
             self.is_running = True
@@ -126,12 +143,7 @@ class ConstellationSystemLauncher:
             logger.info("🔄 进入系统主循环...")
             
             while self.is_running:
-                # 检查和执行规划周期
-                cycle_info = await self.planning_manager.check_and_execute_cycle([])
-                
-                if cycle_info:
-                    logger.info(f"📊 执行规划周期: {cycle_info}")
-                
+                # 系统运行中，多智能体系统会自动处理规划周期
                 # 短暂休眠
                 await asyncio.sleep(1)
                 
@@ -148,10 +160,6 @@ class ConstellationSystemLauncher:
             logger.info("⏹️ 停止系统...")
             
             self.is_running = False
-            
-            # 停止滚动规划
-            if self.planning_manager:
-                await self.planning_manager.stop_rolling_planning()
             
             # 停止多智能体系统
             if self.multi_agent_system:

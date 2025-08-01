@@ -19,6 +19,7 @@ from google.adk.sessions import Session
 from google.genai import types
 
 from .simulation_scheduler_agent import SimulationSchedulerAgent
+from .adk_optimized_scheduler import ADKOptimizedScheduler
 from .satellite_agent import SatelliteAgent
 from .leader_agent import LeaderAgent
 from .coordination_manager import CoordinationManager
@@ -84,6 +85,9 @@ class MultiAgentSystem(BaseAgent):
         self._satellite_agents: Dict[str, SatelliteAgent] = {}
         self._leader_agents: Dict[str, LeaderAgent] = {}
         self._active_discussion_groups: Dict[str, Dict[str, Any]] = {}
+
+        # 卫星智能体工厂（用于获取已创建的智能体）
+        self._satellite_factory = None
 
 
 
@@ -170,14 +174,26 @@ class MultiAgentSystem(BaseAgent):
     def _initialize_core_components(self):
         """初始化核心组件"""
         try:
-            # 仿真调度智能体
+            # 仿真调度智能体（使用ADK优化版本）
             scheduler_config = self._system_config.get('simulation_scheduler', {})
-            self._simulation_scheduler = SimulationSchedulerAgent(
-                name="SimulationScheduler",
-                model=scheduler_config.get('model', 'gemini-2.0-flash'),
-                config_manager=self._config_manager,  # 传递配置管理器
-                multi_agent_system=self  # 传递多智能体系统引用
-            )
+            use_adk_optimization = scheduler_config.get('use_adk_optimization', True)
+
+            if use_adk_optimization:
+                self._simulation_scheduler = ADKOptimizedScheduler(
+                    name="ADKOptimizedScheduler",
+                    model=scheduler_config.get('model', 'gemini-2.0-flash'),
+                    config_manager=self._config_manager,
+                    multi_agent_system=self
+                )
+                logger.info("✅ 使用ADK优化调度器（transfer_to_agent机制）")
+            else:
+                self._simulation_scheduler = SimulationSchedulerAgent(
+                    name="SimulationScheduler",
+                    model=scheduler_config.get('model', 'gemini-2.0-flash'),
+                    config_manager=self._config_manager,
+                    multi_agent_system=self
+                )
+                logger.info("✅ 使用传统调度器（轮询机制）")
 
             # 协调管理器
             coordination_config = self._system_config.get('coordination', {})
@@ -390,40 +406,81 @@ class MultiAgentSystem(BaseAgent):
         target_id: str,
         ctx: InvocationContext
     ) -> List[SatelliteAgent]:
-        """为目标创建相关的卫星智能体"""
+        """为目标获取相关的卫星智能体（从已创建的池中获取，避免重复创建）"""
         try:
-            satellite_config = self.system_config.get('satellite_agents', {})
-            
-            # 模拟获取可见的卫星列表（实际应通过可见性计算获得）
-            visible_satellites = ["Satellite_01", "Satellite_02", "Satellite_03"]
-            
+            # 获取可见的卫星列表（实际应通过可见性计算获得）
+            visible_satellites = await self._get_visible_satellites_for_target(target_id)
+
             satellite_agents = []
-            
+
             for sat_id in visible_satellites:
-                if sat_id not in self._satellite_agents:
-                    # 创建新的卫星智能体
-                    satellite_agent = SatelliteAgent(
-                        satellite_id=sat_id,
-                        name=f"Agent_{sat_id}",
-                        config=satellite_config
-                    )
+                # 优先从已注册的智能体中获取
+                agent = self.get_satellite_agent(sat_id)
 
-                    # 注册到协调管理器
-                    self._coordination_manager.register_agent(satellite_agent)
+                if agent is None:
+                    # 如果没有注册，从工厂获取（避免重复创建）
+                    agent = await self._get_agent_from_factory(sat_id)
 
-                    # 保存到注册表
-                    self._satellite_agents[sat_id] = satellite_agent
+                    if agent:
+                        # 注册到系统
+                        self._satellite_agents[sat_id] = agent
+                        self._coordination_manager.register_agent(agent)
+                        logger.info(f"📋 从工厂获取并注册卫星智能体: {agent.name}")
+                    else:
+                        logger.warning(f"⚠️ 无法获取卫星智能体: {sat_id}")
+                        continue
+                else:
+                    logger.debug(f"♻️ 复用已注册的卫星智能体: {agent.name}")
 
-                    logger.info(f"🛰️ 创建卫星智能体: {satellite_agent.name}")
+                satellite_agents.append(agent)
 
-                satellite_agents.append(self._satellite_agents[sat_id])
-            
+            logger.info(f"✅ 为目标 {target_id} 获取了 {len(satellite_agents)} 个卫星智能体")
             return satellite_agents
-            
+
         except Exception as e:
-            logger.error(f"❌ 创建卫星智能体失败: {e}")
+            logger.error(f"❌ 获取卫星智能体失败: {e}")
             return []
-    
+
+    async def _get_visible_satellites_for_target(self, target_id: str) -> List[str]:
+        """获取对目标可见的卫星列表"""
+        try:
+            # TODO: 实际应通过可见性计算获得，这里先使用模拟数据
+            # 可以调用 STK 可见性计算或使用缓存的可见性窗口
+            visible_satellites = ["Satellite11", "Satellite12", "Satellite13", "Satellite21", "Satellite22"]
+
+            logger.debug(f"目标 {target_id} 的可见卫星: {visible_satellites}")
+            return visible_satellites
+
+        except Exception as e:
+            logger.error(f"❌ 获取目标 {target_id} 的可见卫星失败: {e}")
+            return []
+
+    async def _get_agent_from_factory(self, satellite_id: str) -> Optional[SatelliteAgent]:
+        """从卫星智能体工厂获取智能体"""
+        try:
+            if self._satellite_factory is None:
+                logger.warning("⚠️ 卫星智能体工厂未初始化")
+                return None
+
+            # 从工厂获取已创建的智能体
+            agent = self._satellite_factory.get_satellite_agent(satellite_id)
+
+            if agent:
+                logger.debug(f"✅ 从工厂获取卫星智能体: {satellite_id}")
+            else:
+                logger.warning(f"⚠️ 工厂中未找到卫星智能体: {satellite_id}")
+
+            return agent
+
+        except Exception as e:
+            logger.error(f"❌ 从工厂获取卫星智能体 {satellite_id} 失败: {e}")
+            return None
+
+    def set_satellite_factory(self, satellite_factory):
+        """设置卫星智能体工厂引用"""
+        self._satellite_factory = satellite_factory
+        logger.info("✅ 多智能体系统已设置卫星智能体工厂引用")
+
     async def _process_coordination_result(
         self,
         target_id: str,
@@ -600,9 +657,31 @@ class MultiAgentSystem(BaseAgent):
         try:
             for satellite_id, agent in satellite_agents.items():
                 self._satellite_agents[satellite_id] = agent
+
+                # 🔧 关键修复：设置卫星智能体的多智能体系统引用
+                if hasattr(agent, 'set_multi_agent_system'):
+                    agent.set_multi_agent_system(self)
+                    logger.debug(f"✅ 已设置卫星 {satellite_id} 的多智能体系统引用")
+                elif hasattr(agent, '_multi_agent_system'):
+                    # 直接设置属性（对于使用Pydantic的智能体）
+                    object.__setattr__(agent, '_multi_agent_system', self)
+                    logger.debug(f"✅ 已直接设置卫星 {satellite_id} 的多智能体系统引用")
+                else:
+                    logger.warning(f"⚠️ 卫星 {satellite_id} 不支持多智能体系统引用设置")
+
                 logger.info(f"注册卫星智能体: {satellite_id}")
 
             logger.info(f"成功注册 {len(satellite_agents)} 个卫星智能体到多智能体系统")
+
+            # 如果使用ADK优化调度器，自动设置为sub_agents
+            if hasattr(self._simulation_scheduler, 'initialize_adk_transfer_mode'):
+                try:
+                    # 标记需要初始化ADK transfer模式
+                    object.__setattr__(self._simulation_scheduler, '_needs_transfer_init', True)
+                    logger.info("✅ 已标记ADK transfer模式需要初始化")
+                except Exception as e:
+                    logger.warning(f"⚠️ ADK transfer模式初始化标记失败: {e}")
+
             return True
 
         except Exception as e:
@@ -645,6 +724,10 @@ class MultiAgentSystem(BaseAgent):
             # 创建会话输出目录
             self._create_session_output_dir()
 
+            # 初始化卫星智能体（如果工厂已设置）
+            if self._satellite_factory:
+                await self._initialize_satellite_agents_from_factory()
+
             # 设置运行状态
             self._is_running = True
 
@@ -655,6 +738,30 @@ class MultiAgentSystem(BaseAgent):
             logger.error(f"多智能体系统启动失败: {e}")
             self._is_running = False
             return False
+
+    async def _initialize_satellite_agents_from_factory(self):
+        """从工厂初始化卫星智能体到系统中"""
+        try:
+            if not self._satellite_factory:
+                logger.warning("⚠️ 卫星智能体工厂未设置")
+                return
+
+            # 获取工厂中所有已创建的智能体
+            factory_agents = self._satellite_factory.get_all_satellite_agents()
+
+            if factory_agents:
+                # 批量注册到多智能体系统
+                success = self.register_satellite_agents(factory_agents)
+
+                if success:
+                    logger.info(f"✅ 从工厂初始化了 {len(factory_agents)} 个卫星智能体")
+                else:
+                    logger.error("❌ 从工厂初始化卫星智能体失败")
+            else:
+                logger.info("📭 工厂中暂无已创建的卫星智能体")
+
+        except Exception as e:
+            logger.error(f"❌ 从工厂初始化卫星智能体失败: {e}")
 
     async def shutdown_system(self) -> bool:
         """
