@@ -1119,6 +1119,20 @@ class SatelliteAgent(BaseAgent):
         except Exception as e:
             logger.error(f"❌ 卫星 {self.satellite_id} 接收任务失败: {e}")
 
+            # 🔧 修复：即使任务处理失败，也要发送失败通知
+            try:
+                failure_result = {
+                    'task_id': task.task_id,
+                    'status': 'failed',
+                    'success': False,
+                    'error': str(e),
+                    'satellite_id': self.satellite_id,
+                    'completion_time': datetime.now().isoformat()
+                }
+                await self._report_result_to_scheduler(task, failure_result)
+            except Exception as report_error:
+                logger.error(f"❌ 发送失败通知也失败: {report_error}")
+
     async def _process_meta_task_set(self, task: TaskInfo):
         """
         处理元任务集 - 支持自主处理模式
@@ -1149,10 +1163,35 @@ class SatelliteAgent(BaseAgent):
             memory_module = MemoryModule(self.satellite_id)
             memory_module.store_task(None, task)
 
+            # 🔧 修复：向仿真调度智能体报告元任务集完成
+            meta_task_result = {
+                'task_id': task.task_id,
+                'status': 'completed',
+                'success': True,
+                'processing_mode': 'autonomous' if requires_autonomous else 'traditional',
+                'satellite_id': self.satellite_id,
+                'completion_time': datetime.now().isoformat()
+            }
+            await self._report_result_to_scheduler(task, meta_task_result)
+
             logger.info(f"✅ 卫星 {self.satellite_id} 元任务集处理完成")
 
         except Exception as e:
             logger.error(f"❌ 处理元任务集失败: {e}")
+
+            # 🔧 修复：元任务集处理失败时也要发送失败通知
+            try:
+                failure_result = {
+                    'task_id': task.task_id,
+                    'status': 'failed',
+                    'success': False,
+                    'error': str(e),
+                    'satellite_id': self.satellite_id,
+                    'completion_time': datetime.now().isoformat()
+                }
+                await self._report_result_to_scheduler(task, failure_result)
+            except Exception as report_error:
+                logger.error(f"❌ 发送失败通知也失败: {report_error}")
 
     async def _process_autonomous_meta_task(self, task: TaskInfo):
         """
@@ -1720,7 +1759,7 @@ class SatelliteAgent(BaseAgent):
                 }
             }
 
-            # 更新任务状态
+            # 更新任务状态为已完成
             if hasattr(self, 'memory_module'):
                 # 创建模拟的InvocationContext用于内存模块
                 from google.adk.agents.invocation_context import InvocationContext
@@ -1736,7 +1775,11 @@ class SatelliteAgent(BaseAgent):
                 mock_ctx.session = mock_session
                 mock_ctx.session.state = {}
 
-                self.memory_module.update_task_status(mock_ctx, task.task_id, 'executing')
+                # 🔧 修复：更新任务状态为已完成，而不是执行中
+                self.memory_module.update_task_status(mock_ctx, task.task_id, 'completed')
+
+            # 🔧 修复：向仿真调度智能体报告任务完成
+            await self._report_result_to_scheduler(task, discussion_result)
 
             logger.info(f"✅ ADK标准讨论组结果处理完成: {discussion_id}")
 
