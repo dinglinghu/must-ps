@@ -3,12 +3,12 @@
 """
 
 from .meta_task_manager import MetaTaskManager, MetaTaskSet, MetaTaskWindow, get_meta_task_manager
-from .gantt_chart_generator import GanttChartGenerator
+# 🧹 已清理：from .gantt_chart_generator import GanttChartGenerator
 
 __all__ = [
     'MetaTaskManager',
-    'MetaTaskSet', 
+    'MetaTaskSet',
     'MetaTaskWindow',
-    'GanttChartGenerator',
+    # 🧹 已清理：'GanttChartGenerator',
     'get_meta_task_manager'
 ]

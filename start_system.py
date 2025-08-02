@@ -62,17 +62,8 @@ async def start_ui_only():
         return False
 
 
-async def start_gantt_demo():
-    """启动甘特图演示"""
-    print("📊 启动甘特图可视化演示...")
-    
-    try:
-        from demos.demo_gantt_visualization import main
-        await main()
-        return True
-    except Exception as e:
-        print(f"❌ 甘特图演示启动失败: {e}")
-        return False
+# 🧹 已清理：甘特图演示功能已删除
+# 原因：甘特图功能在当前GDOP分析流程中未被使用
 
 
 def run_tests():
@@ -147,7 +138,6 @@ def show_help():
     print("可用模式:")
     print("  complete    - 启动完整多智能体系统 (默认)")
     print("  ui          - 仅启动UI监控界面")
-    print("  gantt       - 启动甘特图可视化演示")
     print("  test        - 运行系统测试")
     print("  check       - 检查系统依赖和配置")
     print("  help        - 显示此帮助信息")
@@ -191,8 +181,7 @@ async def main():
             success = await start_complete_system()
         elif args.mode == 'ui':
             success = await start_ui_only()
-        elif args.mode == 'gantt':
-            success = await start_gantt_demo()
+        # 🧹 已清理：甘特图演示模式已删除
         elif args.mode == 'test':
             success = run_tests()
         elif args.mode == 'check':

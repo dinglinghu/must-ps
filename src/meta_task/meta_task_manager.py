@@ -553,32 +553,10 @@ class MetaTaskManager:
         Returns:
             生成的甘特图文件路径字典
         """
-        try:
-            from .gantt_chart_generator import GanttChartGenerator
-
-            gantt_generator = GanttChartGenerator(self.config_manager)
-            generated_files = {}
-
-            # 生成元任务甘特图
-            timestamp = meta_task_set.collection_time.strftime("%Y%m%d_%H%M%S")
-            meta_task_path = self.gantt_dir / f"meta_task_gantt_{timestamp}"
-
-            if gantt_generator.generate_meta_task_gantt(meta_task_set, str(meta_task_path)):
-                generated_files["meta_task"] = f"{meta_task_path}.{self.meta_task_config['gantt_chart']['output_format']}"
-
-            # 为每个导弹生成可见性甘特图
-            for missile_id in meta_task_set.total_missiles:
-                visibility_path = self.gantt_dir / f"visibility_gantt_{missile_id}_{timestamp}"
-
-                if gantt_generator.generate_visibility_gantt(meta_task_set, missile_id, str(visibility_path)):
-                    generated_files[f"visibility_{missile_id}"] = f"{visibility_path}.{self.meta_task_config['gantt_chart']['output_format']}"
-
-            logger.info(f"✅ 甘特图生成完成: {len(generated_files)} 个文件")
-            return generated_files
-
-        except Exception as e:
-            logger.error(f"❌ 生成甘特图失败: {e}")
-            return {}
+        # 🧹 已清理：甘特图生成功能已删除
+        # 原因：依赖的甘特图模块已被清理，该功能在当前GDOP分析流程中未被使用
+        logger.info("⚠️ 甘特图生成功能已被清理，跳过甘特图生成")
+        return {}
 
     def _convert_to_serializable(self, meta_task_set: MetaTaskSet) -> Dict[str, Any]:
         """

@@ -27,7 +27,7 @@ from ..stk_interface.missile_manager import MissileManager
 from ..stk_interface.visibility_calculator import VisibilityCalculator
 from ..constellation.constellation_manager import ConstellationManager
 from ..meta_task.meta_task_manager import MetaTaskManager
-from ..meta_task.gantt_chart_generator import GanttChartGenerator
+# 🧹 已清理：from ..meta_task.gantt_chart_generator import GanttChartGenerator
 from ..prompts.aerospace_planning_prompts import (
     get_meta_task_prompt,
     get_gantt_data_prompt,
@@ -2045,11 +2045,11 @@ class SimulationSchedulerAgent(LlmAgent):
                 except Exception as e:
                     logger.warning(f"⚠️ 解析创建时间失败: {e}")
 
-            # 首先检查ADK标准讨论系统中的状态
+            # 首先检查ADK官方讨论系统中的状态
             if self._multi_agent_system:
-                adk_standard_system = self._multi_agent_system.get_adk_standard_discussion_system()
-                if adk_standard_system and hasattr(adk_standard_system, '_active_discussions'):
-                    if discussion_id not in adk_standard_system._active_discussions:
+                adk_official_system = self._multi_agent_system.get_adk_official_discussion_system()
+                if adk_official_system and hasattr(adk_official_system, '_active_discussions'):
+                    if discussion_id not in adk_official_system._active_discussions:
                         logger.info(f"✅ ADK讨论组 {discussion_id} 已从活跃列表中移除，标记为完成")
                         return 'completed'
 
@@ -2888,16 +2888,16 @@ class SimulationSchedulerAgent(LlmAgent):
         try:
             logger.info(f"🔄 自动解散讨论组: {discussion_id}")
 
-            # 获取ADK标准讨论系统
-            adk_standard_system = self._multi_agent_system.get_adk_standard_discussion_system()
-            if adk_standard_system:
-                success = await adk_standard_system.complete_discussion(discussion_id)
+            # 获取ADK官方讨论系统
+            adk_official_system = self._multi_agent_system.get_adk_official_discussion_system()
+            if adk_official_system:
+                success = await adk_official_system.complete_discussion(discussion_id)
                 if success:
                     logger.info(f"✅ 讨论组 {discussion_id} 自动解散成功")
                 else:
                     logger.warning(f"⚠️ 讨论组 {discussion_id} 自动解散失败")
             else:
-                logger.warning(f"⚠️ ADK标准讨论系统不可用，无法自动解散讨论组 {discussion_id}")
+                logger.warning(f"⚠️ ADK官方讨论系统不可用，无法自动解散讨论组 {discussion_id}")
 
         except Exception as e:
             logger.error(f"❌ 自动解散讨论组 {discussion_id} 失败: {e}")
@@ -3138,15 +3138,9 @@ class SimulationSchedulerAgent(LlmAgent):
 
                 self._send_ui_log(f"✅ 现实元任务包发送给 {sent_count} 个候选卫星")
 
-                # 5. 生成甘特图
-                gantt_result = await self.generate_mission_gantt_charts(
-                    all_missile_info,
-                    f"✅ 现实元任务包发送成功，{sent_count} 个卫星开始STK计算"
-                )
-
+                # 🧹 已清理：甘特图生成功能已删除
+                # 原因：依赖的甘特图模块已被清理，该功能在当前GDOP分析流程中未被使用
                 gantt_info = ""
-                if gantt_result:
-                    gantt_info = f"，甘特图已生成: {len(gantt_result)} 个文件"
 
                 if discussion_group_id:
                     return f"✅ 现实元任务包发送成功，{sent_count} 个卫星开始STK计算，讨论组: {discussion_group_id}{gantt_info}"
@@ -3386,47 +3380,8 @@ class SimulationSchedulerAgent(LlmAgent):
             logger.error(f"❌ 查找最近卫星失败: {e}")
             return []
 
-    async def generate_mission_gantt_charts(
-        self,
-        missile_scenario: List[Dict[str, Any]],
-        scheduler_result: str
-    ) -> Optional[Dict[str, str]]:
-        """为任务生成甘特图"""
-        try:
-            logger.info("🎨 开始生成任务甘特图...")
-
-            # 导入甘特图管理器
-            try:
-                from src.visualization.gantt_integration_manager import ConstellationGanttIntegrationManager
-            except ImportError:
-                logger.warning("⚠️ 甘特图模块不可用，跳过甘特图生成")
-                return None
-
-            # 创建甘特图管理器
-            gantt_manager = ConstellationGanttIntegrationManager(self._config_manager)
-
-            # 获取卫星列表
-            satellite_list = [sat['id'] for sat in self._get_available_satellites()]
-
-            # 自动生成甘特图
-            generated_charts = await gantt_manager.auto_generate_from_scheduler_result(
-                scheduler_result, missile_scenario, satellite_list
-            )
-
-            if generated_charts:
-                logger.info(f"✅ 甘特图生成完成: {len(generated_charts)} 个文件")
-
-                # 发送UI日志
-                self._send_ui_log(f"📊 甘特图已生成: {list(generated_charts.keys())}")
-
-                return generated_charts
-            else:
-                logger.warning("⚠️ 甘特图生成失败")
-                return None
-
-        except Exception as e:
-            logger.error(f"❌ 生成甘特图失败: {e}")
-            return None
+    # 🧹 已清理：generate_mission_gantt_charts 方法已删除
+    # 原因：依赖的甘特图模块已被清理，该功能在当前GDOP分析流程中未被使用
 
     def __str__(self) -> str:
         enhanced_status = "Enhanced" if self.is_enhanced_mode_enabled() else "Basic"

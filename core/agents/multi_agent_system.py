@@ -25,7 +25,6 @@ from .coordination_manager import CoordinationManager
 from .meta_task_agent_integration import MetaTaskAgentIntegration
 from .optimization_calculator import OptimizationCalculator
 
-from .adk_standard_discussion_system import ADKStandardDiscussionSystem
 from .adk_official_discussion_system import ADKOfficialDiscussionSystem
 
 from ..utils.config_manager import get_config_manager
@@ -87,8 +86,7 @@ class MultiAgentSystem(BaseAgent):
 
 
 
-        # ADK标准讨论系统（新版本，符合官方标准）
-        self._adk_standard_discussion_system = ADKStandardDiscussionSystem("ADKStandardDiscussionSystem")
+
 
         # ADK官方讨论系统（按照官方最佳实践设计）
         self._adk_official_discussion_system = ADKOfficialDiscussionSystem()
@@ -99,13 +97,11 @@ class MultiAgentSystem(BaseAgent):
 
         # 设置子智能体
         self.sub_agents = [
-            self._simulation_scheduler,
-            self._adk_standard_discussion_system
+            self._simulation_scheduler
         ]
 
         logger.info("🚀 多智能体系统初始化完成")
-        logger.info("✅ ADK标准讨论系统已集成")
-        logger.info("✅ ADK标准讨论系统已集成（符合官方标准）")
+        logger.info("✅ ADK官方讨论系统已集成")
 
     @property
     def config_manager(self):
@@ -231,10 +227,7 @@ class MultiAgentSystem(BaseAgent):
             
             # 运行仿真调度智能体
             async for event in self._simulation_scheduler.run_async(ctx):
-                # 检查是否需要创建讨论组
-                if self._should_create_discussion_group(event):
-                    async for group_event in self._handle_discussion_group_creation(event, ctx):
-                        yield group_event
+
                 
                 # 处理协调管理器消息
                 coordination_events = await self._coordination_manager.process_messages(ctx)
@@ -284,16 +277,7 @@ class MultiAgentSystem(BaseAgent):
 
         logger.info(f"📁 创建仿真会话目录: {self._session_output_dir}")
     
-    def _should_create_discussion_group(self, event: Event) -> bool:
-        """检查是否需要创建讨论组"""
-        if not event.content or not event.content.parts:
-            return False
-        
-        content_text = event.content.parts[0].text or ""
-        
-        # 检查是否包含元任务生成的关键词
-        keywords = ["成功生成", "元任务窗口", "导弹目标"]
-        return any(keyword in content_text for keyword in keywords)
+
     
     async def _handle_discussion_group_creation(
         self,
@@ -567,13 +551,13 @@ class MultiAgentSystem(BaseAgent):
     
     def get_system_status(self) -> Dict[str, Any]:
         """获取系统状态"""
-        # 获取ADK标准讨论组数量
-        adk_standard_discussions_count = 0
-        if self._adk_standard_discussion_system:
+        # 获取ADK官方讨论组数量
+        adk_official_discussions_count = 0
+        if self._adk_official_discussion_system:
             try:
-                adk_standard_discussions_count = self._adk_standard_discussion_system.get_discussion_count()
+                adk_official_discussions_count = len(self._adk_official_discussion_system._active_discussions)
             except Exception as e:
-                logger.warning(f"获取ADK标准讨论组数量失败: {e}")
+                logger.warning(f"获取ADK官方讨论组数量失败: {e}")
 
         return {
             'status': 'running' if self._is_running else 'stopped',
@@ -583,7 +567,7 @@ class MultiAgentSystem(BaseAgent):
             'leader_agents_count': len(self._leader_agents),
             'active_groups_count': len(self._active_discussion_groups),
             'adk_sessions_count': 0,  # 已移除ADK讨论组管理器
-            'adk_standard_discussions_count': adk_standard_discussions_count,
+            'adk_official_discussions_count': adk_official_discussions_count,
             'coordination_queue_status': self._coordination_manager.get_message_queue_status(),
             'output_directory': str(self._session_output_dir) if self._session_output_dir else None
         }
@@ -686,114 +670,13 @@ class MultiAgentSystem(BaseAgent):
             logger.error(f"多智能体系统关闭失败: {e}")
             return False
 
-    async def create_discussion_group(
-        self,
-        task_info: Dict[str, Any],
-        participating_agents: List[BaseAgent],
-        coordination_type: str = "parallel"
-    ) -> Optional[str]:
-        """
-        创建ADK标准讨论组
-
-        Args:
-            task_info: 任务信息
-            participating_agents: 参与的智能体列表
-            coordination_type: 协调类型 ("parallel", "sequential", "hierarchical")
-
-        Returns:
-            会话ID，如果创建失败则返回None
-        """
-        try:
-            if not self._adk_standard_discussion_system:
-                logger.error("❌ ADK标准讨论系统未初始化")
-                return None
-
-            # 创建模拟的ADK InvocationContext
-            from google.adk.sessions import Session
-            from unittest.mock import Mock
-
-            session = Session(
-                id=f"multi_agent_session_{uuid4().hex[:8]}",
-                app_name="multi_agent_system",
-                user_id="system"
-            )
-
-            mock_ctx = Mock()
-            mock_ctx.session = session
-            mock_ctx.session.state = {}
-
-            # 使用ADK标准讨论系统创建讨论组
-            task_description = task_info.get('description', f"多智能体协同任务 - {coordination_type}模式")
-            session_id = await self._adk_standard_discussion_system.create_discussion(
-                discussion_type=coordination_type,
-                participating_agents=participating_agents,
-                task_description=task_description,
-                ctx=mock_ctx
-            )
-
-            if session_id:
-                logger.info(f"🎉 ADK标准讨论组创建成功: {session_id}")
-                logger.info(f"   任务: {task_description}")
-                logger.info(f"   参与智能体: {len(participating_agents)}个")
-                logger.info(f"   协调类型: {coordination_type}")
-
-            return session_id
-
-        except Exception as e:
-            logger.error(f"❌ 创建ADK标准讨论组失败: {e}")
-            return None
 
 
 
-    async def create_adk_standard_discussion(
-        self,
-        discussion_type: str,
-        participating_agents: List[BaseAgent],
-        task_description: str,
-        ctx: InvocationContext
-    ) -> Optional[str]:
-        """
-        创建ADK标准讨论组（符合官方设计）
 
-        Args:
-            discussion_type: 讨论类型 ("coordinator", "parallel", "sequential")
-            participating_agents: 参与讨论的智能体列表
-            task_description: 任务描述
-            ctx: ADK调用上下文
 
-        Returns:
-            讨论ID，如果创建失败则返回None
-        """
-        try:
-            if not self._adk_standard_discussion_system:
-                logger.error("❌ ADK标准讨论系统未初始化")
-                return None
 
-            # 使用ADK标准讨论系统创建讨论组
-            discussion_id = await self._adk_standard_discussion_system.create_discussion(
-                discussion_type, participating_agents, task_description, ctx
-            )
 
-            if discussion_id:
-                logger.info(f"🎉 ADK标准讨论组创建成功: {discussion_id}")
-                logger.info(f"   类型: {discussion_type}")
-                logger.info(f"   任务: {task_description}")
-                logger.info(f"   参与智能体: {len(participating_agents)}个")
-
-            return discussion_id
-
-        except Exception as e:
-            logger.error(f"❌ 创建ADK标准讨论组失败: {e}")
-            return None
-
-    def get_adk_standard_discussion_system(self) -> ADKStandardDiscussionSystem:
-        """
-        获取ADK标准讨论系统
-
-        Returns:
-            ADK标准讨论系统实例
-        """
-        return self._adk_standard_discussion_system
 
     def get_adk_official_discussion_system(self) -> ADKOfficialDiscussionSystem:
         """
@@ -848,16 +731,16 @@ class MultiAgentSystem(BaseAgent):
             logger.error(f"❌ 创建ADK官方讨论组失败: {e}")
             return None
 
-    def get_active_adk_standard_discussions(self, ctx: InvocationContext = None) -> Dict[str, Any]:
+    def get_active_adk_official_discussions(self, ctx: InvocationContext = None) -> Dict[str, Any]:
         """
-        获取所有活跃的ADK标准讨论组
+        获取所有活跃的ADK官方讨论组
 
         Args:
             ctx: ADK调用上下文（可选）
 
         Returns:
-            活跃ADK标准讨论组字典
+            活跃ADK官方讨论组字典
         """
-        if self._adk_standard_discussion_system:
-            return self._adk_standard_discussion_system.get_active_discussions(ctx)
+        if self._adk_official_discussion_system:
+            return self._adk_official_discussion_system._active_discussions
         return {}

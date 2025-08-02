@@ -226,12 +226,8 @@ meta_task:
     interpolation_method: "linear"   # 插值方法: linear, cubic
     alignment_tolerance: 5           # 对齐容差(秒)
 
-  # 甘特图配置
-  gantt_chart:
-    output_format: "png"             # 输出格式: png, svg, pdf
-    dpi: 300                         # 图像分辨率
-    figure_size: [20, 12]            # 图像尺寸 [宽, 高] 英寸
-    time_format: "%H:%M:%S"          # 时间显示格式
+  # 🧹 已清理：甘特图配置已删除
+  # 原因：甘特图功能在当前GDOP分析流程中未被使用
 
 # 多智能体系统配置
 multi_agent_system:

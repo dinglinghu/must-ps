@@ -146,9 +146,9 @@ GANTT_DATA_GENERATION_PROMPT = """
 ### JSON输出格式
 ```json
 {{
-  "gantt_chart_data": {{
+  "task_schedule_data": {{
     "metadata": {{
-      "chart_title": "航天任务规划调度甘特图",
+      "schedule_title": "航天任务规划调度表",
       "time_unit": "seconds",
       "total_duration": "1800",
       "satellite_count": 3

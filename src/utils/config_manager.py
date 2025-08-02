@@ -233,56 +233,9 @@ class ConfigManager:
                 "time_resolution": 10,
                 "interpolation_method": "linear",
                 "alignment_tolerance": 5
-            },
-            "gantt_chart": {
-                "output_format": "png",
-                "dpi": 300,
-                "figure_size": [20, 12],
-                "time_format": "%H:%M:%S",
-                "colors": {
-                    "missile_flight": "#E74C3C",
-                    "missile_launch": "#C0392B",
-                    "missile_midcourse": "#F39C12",
-                    "missile_terminal": "#D35400",
-                    "missile_impact": "#8B0000",
-                    "meta_task": "#3498DB",
-                    "meta_task_active": "#2980B9",
-                    "meta_task_overlap": "#85C1E9",
-                    "visibility_high": "#27AE60",
-                    "visibility_medium": "#F1C40F",
-                    "visibility_low": "#E67E22",
-                    "visibility_none": "#95A5A6",
-                    "satellite_track": "#9B59B6",
-                    "satellite_coverage": "#8E44AD",
-                    "system_normal": "#2ECC71",
-                    "system_warning": "#F39C12",
-                    "system_critical": "#E74C3C",
-                    "background": "#FFFFFF",
-                    "grid_major": "#BDC3C7",
-                    "grid_minor": "#ECF0F1",
-                    "text_primary": "#2C3E50",
-                    "text_secondary": "#7F8C8D"
-                },
-                "style": {
-                    "font_family": "Arial",
-                    "title_font_size": 16,
-                    "label_font_size": 12,
-                    "tick_font_size": 10,
-                    "legend_font_size": 11,
-                    "line_width": 2.0,
-                    "grid_line_width": 0.8,
-                    "border_width": 1.5,
-                    "bar_alpha": 0.8,
-                    "grid_alpha": 0.3,
-                    "background_alpha": 1.0,
-                    "bar_height": 0.6,
-                    "bar_spacing": 0.2,
-                    "margin_left": 0.1,
-                    "margin_right": 0.05,
-                    "margin_top": 0.08,
-                    "margin_bottom": 0.12
-                }
             }
+            # 🧹 已清理：甘特图配置已删除
+            # 原因：甘特图功能在当前GDOP分析流程中未被使用
         })
 
     def save_config(self):

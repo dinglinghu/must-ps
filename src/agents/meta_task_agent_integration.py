@@ -10,7 +10,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 
 from ..meta_task.meta_task_manager import MetaTaskManager, MetaTaskSet, MetaTaskWindow
-from ..meta_task.gantt_chart_generator import GanttChartGenerator
+# 🧹 已清理：from ..meta_task.gantt_chart_generator import GanttChartGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -53,17 +53,17 @@ class MetaTaskAgentIntegration:
     def __init__(
         self,
         meta_task_manager: MetaTaskManager,
-        gantt_generator: Optional[GanttChartGenerator] = None
+        gantt_generator: Optional[object] = None  # 🧹 已清理：GanttChartGenerator类型
     ):
         """
         初始化集成管理器
-        
+
         Args:
             meta_task_manager: 元任务管理器实例
-            gantt_generator: 甘特图生成器实例
+            gantt_generator: 甘特图生成器实例（已清理，保留参数兼容性）
         """
         self.meta_task_manager = meta_task_manager
-        self.gantt_generator = gantt_generator or GanttChartGenerator()
+        self.gantt_generator = None  # 🧹 已清理：甘特图生成器功能已删除
         
         # 存储分配和结果
         self.task_assignments: Dict[str, List[AgentTaskAssignment]] = {}
@@ -249,12 +249,8 @@ class MetaTaskAgentIntegration:
             average_gdop = self._calculate_average_gdop(assignments)
             resource_utilization = self._calculate_resource_utilization(assignments)
             
-            # 生成甘特图
+            # 🧹 已清理：甘特图生成功能已删除
             gantt_chart_path = None
-            if self.gantt_generator and assignments:
-                gantt_chart_path = self._generate_coordination_gantt_chart(
-                    target_id, assignments, coordination_time
-                )
             
             # 创建协调结果
             result = CoordinationResult(
@@ -453,38 +449,5 @@ class MetaTaskAgentIntegration:
         unique_satellites = len(set(assign.satellite_id for assign in assignments))
         return min(1.0, unique_satellites / 5.0)  # 假设5颗卫星为满利用
     
-    def _generate_coordination_gantt_chart(
-        self,
-        target_id: str,
-        assignments: List[AgentTaskAssignment],
-        coordination_time: datetime
-    ) -> Optional[str]:
-        """生成协调结果甘特图"""
-        try:
-            if not self.gantt_generator:
-                return None
-            
-            # 准备甘特图数据
-            gantt_data = []
-            
-            for assign in assignments:
-                for window_id in assign.meta_windows:
-                    gantt_data.append({
-                        'task_name': f"{assign.satellite_id}_{window_id}",
-                        'satellite_id': assign.satellite_id,
-                        'start_time': coordination_time,  # 简化，使用协调时间
-                        'end_time': coordination_time + timedelta(minutes=10),  # 简化
-                        'target_id': target_id,
-                        'window_id': window_id
-                    })
-            
-            # 生成甘特图
-            chart_path = self.gantt_generator.generate_coordination_gantt_chart(
-                target_id, gantt_data, coordination_time
-            )
-            
-            return chart_path
-            
-        except Exception as e:
-            logger.error(f"生成协调甘特图失败: {e}")
-            return None
+    # 🧹 已清理：_generate_coordination_gantt_chart 方法已删除
+    # 原因：甘特图功能在当前GDOP分析流程中未被使用

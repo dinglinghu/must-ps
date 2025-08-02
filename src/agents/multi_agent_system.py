@@ -26,13 +26,13 @@ from .coordination_manager import CoordinationManager
 from .meta_task_agent_integration import MetaTaskAgentIntegration
 from .optimization_calculator import OptimizationCalculator
 
-# ADKStandardDiscussionSystem已删除，功能由ADKParallelDiscussionGroupManager替代
 from .adk_official_discussion_system import ADKOfficialDiscussionSystem
 
 from ..utils.config_manager import get_config_manager
 from ..utils.time_manager import get_time_manager
+from ..utils.llm_config_manager import get_llm_config_manager
 from ..meta_task.meta_task_manager import get_meta_task_manager
-from ..meta_task.gantt_chart_generator import GanttChartGenerator
+# 🧹 已清理：from ..meta_task.gantt_chart_generator import GanttChartGenerator
 
 logger = logging.getLogger(__name__)
 logger.info("✅ 使用真实ADK框架于多智能体系统")
@@ -94,8 +94,11 @@ class MultiAgentSystem(BaseAgent):
         # ADK标准讨论系统已删除，功能由ADKParallelDiscussionGroupManager替代
         self._adk_standard_discussion_system = None
 
-        # ADK官方讨论系统（按照官方最佳实践设计）
-        self._adk_official_discussion_system = ADKOfficialDiscussionSystem()
+        # ADK官方讨论系统（按照官方最佳实践设计，使用配置的模型）
+        llm_config_mgr = get_llm_config_manager()
+        discussion_llm_config = llm_config_mgr.get_llm_config('simulation_scheduler')
+        discussion_model = discussion_llm_config.model  # 使用LLMConfig的model属性
+        self._adk_official_discussion_system = ADKOfficialDiscussionSystem(model=discussion_model)
 
         # 系统状态
         self._is_running = False
@@ -205,9 +208,9 @@ class MultiAgentSystem(BaseAgent):
 
             # 元任务集成管理器
             meta_task_manager = get_meta_task_manager()
-            gantt_generator = GanttChartGenerator(self._config_manager)
+            # 🧹 已清理：甘特图生成器功能已删除
             self._meta_task_integration = MetaTaskAgentIntegration(
-                meta_task_manager, gantt_generator
+                meta_task_manager, None  # 甘特图生成器已清理
             )
 
 
@@ -300,80 +303,10 @@ class MultiAgentSystem(BaseAgent):
 
         logger.info(f"📁 创建仿真会话目录: {self._session_output_dir}")
     
-    def _should_create_discussion_group(self, event: Event) -> bool:
-        """检查是否需要创建讨论组"""
-        if not event.content or not event.content.parts:
-            return False
-        
-        content_text = event.content.parts[0].text or ""
-        
-        # 检查是否包含元任务生成的关键词
-        keywords = ["成功生成", "元任务窗口", "导弹目标"]
-        return any(keyword in content_text for keyword in keywords)
+
     
-    async def _handle_discussion_group_creation(
-        self,
-        trigger_event: Event,
-        ctx: InvocationContext
-    ) -> AsyncGenerator[Event, None]:
-        """处理讨论组创建"""
-        try:
-            yield Event(
-                author=self.name,
-                content=types.Content(parts=[types.Part(text="检测到元任务生成，开始创建讨论组...")])
-            )
-            
-            # 模拟获取目标信息（实际应从事件中解析）
-            target_ids = ["Missile_001", "Missile_002"]  # 模拟目标ID
-            
-            for target_id in target_ids:
-                # 创建组长智能体
-                leader_agent = await self._create_leader_agent(target_id, ctx)
-                
-                if leader_agent:
-                    # 创建卫星智能体
-                    satellite_agents = await self._create_satellite_agents_for_target(target_id, ctx)
-                    
-                    # 建立讨论组
-                    group_id = f"group_{target_id}_{datetime.now().strftime('%H%M%S')}"
-                    
-                    success = await self._coordination_manager.create_coordination_session(
-                        session_id=group_id,
-                        participants=[agent.name for agent in satellite_agents],
-                        coordinator=leader_agent.name,
-                        topic=f"目标 {target_id} 任务规划",
-                        ctx=ctx
-                    )
-                    
-                    if success:
-                        # 运行组长智能体
-                        async for leader_event in leader_agent.run_async(ctx):
-                            yield leader_event
-                            
-                            # 检查是否完成协调
-                            if leader_event.is_final_response():
-                                # 处理协调结果
-                                await self._process_coordination_result(
-                                    target_id, group_id, leader_agent, ctx
-                                )
-                                break
-                        
-                        yield Event(
-                            author=self.name,
-                            content=types.Content(parts=[types.Part(text=f"目标 {target_id} 讨论组协调完成")])
-                        )
-                    else:
-                        yield Event(
-                            author=self.name,
-                            content=types.Content(parts=[types.Part(text=f"目标 {target_id} 讨论组创建失败")])
-                        )
-            
-        except Exception as e:
-            logger.error(f"❌ 讨论组创建处理失败: {e}")
-            yield Event(
-                author=self.name,
-                content=types.Content(parts=[types.Part(text=f"讨论组创建失败: {e}")])
-            )
+
+
     
     async def _create_leader_agent(self, target_id: str, ctx: InvocationContext) -> Optional[LeaderAgent]:
         """创建组长智能体"""
@@ -788,60 +721,13 @@ class MultiAgentSystem(BaseAgent):
             logger.error(f"多智能体系统关闭失败: {e}")
             return False
 
-    async def create_discussion_group(
-        self,
-        task_info: Dict[str, Any],
-        participating_agents: List[BaseAgent],
-        coordination_type: str = "parallel"
-    ) -> Optional[str]:
-        """
-        创建ADK标准讨论组
-
-        Args:
-            task_info: 任务信息
-            participating_agents: 参与的智能体列表
-            coordination_type: 协调类型 ("parallel", "sequential", "hierarchical")
-
-        Returns:
-            会话ID，如果创建失败则返回None
-        """
-        # ADK标准讨论系统已删除，功能由ADKParallelDiscussionGroupManager替代
-        logger.warning("⚠️ create_discussion_group方法已废弃，请使用ADKParallelDiscussionGroupManager")
-        return None
 
 
 
-    async def create_adk_standard_discussion(
-        self,
-        discussion_type: str,
-        participating_agents: List[BaseAgent],
-        task_description: str,
-        ctx: InvocationContext
-    ) -> Optional[str]:
-        """
-        创建ADK标准讨论组（已废弃）
 
-        Args:
-            discussion_type: 讨论类型 ("coordinator", "parallel", "sequential")
-            participating_agents: 参与讨论的智能体列表
-            task_description: 任务描述
-            ctx: ADK调用上下文
 
-        Returns:
-            讨论ID，如果创建失败则返回None
-        """
-        logger.warning("⚠️ create_adk_standard_discussion方法已废弃，请使用ADKParallelDiscussionGroupManager")
-        return None
 
-    def get_adk_standard_discussion_system(self):
-        """
-        获取ADK标准讨论系统（已废弃）
 
-        Returns:
-            None - ADK标准讨论系统已删除
-        """
-        logger.warning("⚠️ get_adk_standard_discussion_system方法已废弃，ADK标准讨论系统已删除")
-        return None
 
     def get_adk_official_discussion_system(self) -> ADKOfficialDiscussionSystem:
         """
@@ -896,15 +782,4 @@ class MultiAgentSystem(BaseAgent):
             logger.error(f"❌ 创建ADK官方讨论组失败: {e}")
             return None
 
-    def get_active_adk_standard_discussions(self, ctx: InvocationContext = None) -> Dict[str, Any]:
-        """
-        获取所有活跃的ADK标准讨论组（已废弃）
 
-        Args:
-            ctx: ADK调用上下文（可选）
-
-        Returns:
-            空字典 - ADK标准讨论系统已删除
-        """
-        logger.warning("⚠️ get_active_adk_standard_discussions方法已废弃，ADK标准讨论系统已删除")
-        return {}

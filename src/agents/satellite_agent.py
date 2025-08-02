@@ -10,10 +10,11 @@ from typing import Dict, List, Any, Optional, AsyncGenerator, Tuple
 from dataclasses import dataclass, asdict
 
 # ADK框架导入 - 强制使用真实ADK
-from google.adk.agents import BaseAgent
+from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event, EventActions
 from google.adk.tools import FunctionTool
+from google.adk.models.lite_llm import LiteLlm
 from google.genai import types
 
 from ..utils.llm_config_manager import get_llm_config_manager
@@ -260,12 +261,13 @@ class TaskManager:
             return False
 
 
-class SatelliteAgent(BaseAgent):
+class SatelliteAgent(LlmAgent):
     """
     卫星智能体
-    
-    基于ADK的BaseAgent实现，每颗卫星对应一个智能体实例。
+
+    基于ADK的LlmAgent实现，每颗卫星对应一个智能体实例。
     负责任务管理、资源状态维护、与组长协调等功能。
+    继承LlmAgent以支持直接的大模型访问和专业分析能力。
     """
     
     def __init__(
@@ -310,10 +312,15 @@ class SatelliteAgent(BaseAgent):
         # 智能体描述
         description = f"卫星 {satellite_id} 智能体，负责任务管理和资源协调"
 
-        # 初始化ADK BaseAgent（不传递tools参数，因为真实ADK不支持）
+        # 获取模型配置
+        model_name = llm_config.model  # 使用LLMConfig的model属性
+
+        # 初始化ADK LlmAgent（支持直接大模型访问）
         super().__init__(
             name=agent_name,  # 使用统一的名称格式
-            description=description
+            description=description,
+            model=LiteLlm(model=model_name),  # 使用配置的模型
+            instruction=system_prompt  # 使用格式化的系统提示词
         )
 
         # 使用object.__setattr__绕过Pydantic限制设置实例变量
@@ -742,8 +749,8 @@ class SatelliteAgent(BaseAgent):
                     'requires_visibility_analysis': True
                 }
 
-                # 调用讨论组创建方法
-                result = await self._create_adk_standard_discussion_group(
+                # 调用ADK官方讨论组创建方法
+                result = await self._create_adk_official_discussion_group(
                     task_id=discussion_request['task_id'],
                     task_description=discussion_request['task_description'],
                     member_satellite_ids=discussion_request['member_satellites']
@@ -1383,8 +1390,8 @@ class SatelliteAgent(BaseAgent):
             task_id = meta_task_info.get('task_id', f"DISCUSSION_{uuid4().hex[:8]}")
             member_satellites = [sat for sat in recommended_satellites if sat != self.satellite_id]
 
-            # 调用讨论组创建方法
-            result = await self._create_adk_standard_discussion_group(
+            # 调用ADK官方讨论组创建方法
+            result = await self._create_adk_official_discussion_group(
                 task_id=task_id,
                 task_description=f"协同处理导弹跟踪任务",
                 member_satellite_ids=member_satellites
@@ -1741,16 +1748,34 @@ class SatelliteAgent(BaseAgent):
         try:
             logger.info(f"📋 处理ADK标准讨论组结果: {discussion_id}")
 
-            # 模拟讨论结果处理
-            # 在实际实现中，这里会从ADK Session State中获取讨论结果
-            discussion_result = {
+            # 🔧 修复：从实际的讨论组执行中获取结果
+            # 安全解散讨论组并获取执行结果
+            discussion_result = await self._safely_dissolve_discussion_group(discussion_id)
+
+            if not discussion_result:
+                # 如果没有获取到结果，使用默认值
+                discussion_result = {
+                    'success': False,
+                    'status': 'failed',
+                    'quality_score': 0.0,
+                    'response': '未获取到讨论组执行结果',
+                    'iterations': 0
+                }
+                logger.warning(f"⚠️ 未获取到讨论组 {discussion_id} 的执行结果，使用默认值")
+
+            # 转换为任务结果格式
+            task_result = {
                 'discussion_id': discussion_id,
                 'task_id': task.task_id,
-                'status': 'completed',
+                'status': discussion_result.get('status', 'failed'),
+                'quality_score': discussion_result.get('quality_score', 0.0),
+                'iterations': discussion_result.get('iterations', 0),
+                'llm_response': discussion_result.get('response', ''),
+                'execution_time': discussion_result.get('execution_time'),
                 'decisions': [
-                    f"卫星 {self.satellite_id} 负责主要跟踪任务",
-                    "其他卫星提供辅助观测数据",
-                    "建立实时数据共享链路"
+                    f"基于LLM分析的专业决策",
+                    f"GDOP优化建议",
+                    f"鲁棒性评估结果"
                 ],
                 'resource_allocation': {
                     'primary_tracker': self.satellite_id,
@@ -1779,12 +1804,62 @@ class SatelliteAgent(BaseAgent):
                 self.memory_module.update_task_status(mock_ctx, task.task_id, 'completed')
 
             # 🔧 修复：向仿真调度智能体报告任务完成
-            await self._report_result_to_scheduler(task, discussion_result)
+            await self._report_result_to_scheduler(task, task_result)
+
+            # 注意：讨论组已在获取结果时解散，这里不需要重复解散
 
             logger.info(f"✅ ADK标准讨论组结果处理完成: {discussion_id}")
 
         except Exception as e:
             logger.error(f"❌ 处理ADK标准讨论组结果失败: {e}")
+
+    async def _safely_dissolve_discussion_group(self, discussion_id: str):
+        """
+        安全解散讨论组（ADK标准方式）
+
+        调用ADK官方讨论系统的安全解散方法，确保：
+        1. 具身智能体状态被保持
+        2. 下次滚动规划可以正确使用这些状态
+        3. 符合ADK官方最佳实践
+        """
+        try:
+            if hasattr(self, '_multi_agent_system') and self._multi_agent_system:
+                # 获取ADK官方讨论系统
+                adk_discussion_system = getattr(self._multi_agent_system, '_adk_official_discussion_system', None)
+
+                if adk_discussion_system:
+                    logger.info(f"🔄 安全解散讨论组: {discussion_id}")
+
+                    # 调用ADK标准的安全解散方法（现在返回执行结果）
+                    result = await adk_discussion_system.complete_discussion(discussion_id)
+
+                    if result.get('success', False):
+                        logger.info(f"✅ 讨论组 {discussion_id} 已安全解散")
+                        logger.info(f"   具身智能体状态已保持，可用于下次滚动规划")
+
+                        # 记录执行结果
+                        status = result.get('status', 'unknown')
+                        quality_score = result.get('quality_score', 0.0)
+                        iterations = result.get('iterations', 0)
+
+                        logger.info(f"📊 讨论组执行结果:")
+                        logger.info(f"   状态: {status}")
+                        logger.info(f"   质量评分: {quality_score:.3f}")
+                        logger.info(f"   迭代次数: {iterations}")
+
+                        # 返回执行结果供上层使用
+                        return result
+                    else:
+                        logger.warning(f"⚠️ 讨论组 {discussion_id} 解散失败")
+                        return result
+                else:
+                    logger.warning(f"⚠️ ADK官方讨论系统不可用，无法安全解散讨论组")
+            else:
+                logger.warning(f"⚠️ 多智能体系统不可用，无法解散讨论组")
+
+        except Exception as e:
+            logger.error(f"❌ 安全解散讨论组失败: {e}")
+            # 不抛出异常，确保任务处理可以继续
 
     async def _find_member_satellites(self, task: TaskInfo, missile_target=None) -> List['SatelliteAgent']:
         """

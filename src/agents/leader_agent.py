@@ -170,14 +170,17 @@ class LeaderAgent(LlmAgent):
                     session_id=f"leader_session_{self.target_id}"
                 )
 
-                # 使用ADK标准讨论系统创建讨论组
+                # 使用ADK官方讨论系统创建讨论组
                 task_description = f"组长智能体任务 - 目标: {self.target_id}"
-                discussion_id = await self._multi_agent_system.create_adk_standard_discussion(
-                    discussion_type="coordinator",  # 组长智能体使用协调器模式
-                    participating_agents=[self],  # 暂时只包含自己，后续可以添加成员
-                    task_description=task_description,
-                    ctx=mock_ctx
-                )
+                adk_official_system = self._multi_agent_system.get_adk_official_discussion_system()
+                if adk_official_system:
+                    discussion_id = await adk_official_system.create_discussion_with_adk_patterns(
+                        pattern_type="sequential_pipeline",  # 组长智能体使用顺序流水线模式
+                        participating_agents=[self],  # 暂时只包含自己，后续可以添加成员
+                        task_description=task_description
+                    )
+                else:
+                    discussion_id = None
 
                 if discussion_id:
                     # 创建简化的讨论组信息（保持向后兼容）
@@ -369,14 +372,17 @@ class LeaderAgent(LlmAgent):
             if not hasattr(self, '_multi_agent_system') or not self._multi_agent_system:
                 return "❌ 多智能体系统未连接，无法创建ADK标准讨论组"
 
-            # 使用ADK标准讨论系统创建讨论组
+            # 使用ADK官方讨论系统创建讨论组
             task_description = f"组长智能体内部任务 - 目标: {self.target_id}"
-            discussion_id = await self._multi_agent_system.create_adk_standard_discussion(
-                discussion_type="coordinator",  # 组长智能体使用协调器模式
-                participating_agents=[self],  # 暂时只包含自己
-                task_description=task_description,
-                ctx=ctx  # 使用传入的真实ADK上下文
-            )
+            adk_official_system = self._multi_agent_system.get_adk_official_discussion_system()
+            if adk_official_system:
+                discussion_id = await adk_official_system.create_discussion_with_adk_patterns(
+                    pattern_type="sequential_pipeline",  # 组长智能体使用顺序流水线模式
+                    participating_agents=[self],  # 暂时只包含自己
+                    task_description=task_description
+                )
+            else:
+                discussion_id = None
 
             if discussion_id:
                 # 创建简化的讨论组信息（保持向后兼容）

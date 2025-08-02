@@ -232,26 +232,26 @@ class ADKDevUI:
 
         @self.app.route('/api/discussion-groups')
         def get_discussion_groups():
-            """获取讨论组列表API - 仅支持ADK标准讨论系统"""
+            """获取讨论组列表API - 仅支持ADK官方讨论系统"""
             try:
                 if not self.multi_agent_system:
                     return jsonify({'error': '多智能体系统未启动', 'groups': []})
 
-                # 只从ADK标准讨论系统获取讨论组信息
+                # 从ADK官方讨论系统获取讨论组信息
                 groups = []
 
                 try:
-                    if hasattr(self.multi_agent_system, '_adk_standard_discussion_system'):
-                        # 使用全局Session管理器获取ADK标准讨论组
+                    if hasattr(self.multi_agent_system, '_adk_official_discussion_system'):
+                        # 使用全局Session管理器获取ADK官方讨论组
                         from src.utils.adk_session_manager import get_adk_session_manager
 
                         session_manager = get_adk_session_manager()
-                        adk_standard_discussions = session_manager.get_adk_discussions()
+                        adk_official_discussions = session_manager.get_adk_discussions()
 
-                        for discussion_id, discussion_info in adk_standard_discussions.items():
+                        for discussion_id, discussion_info in adk_official_discussions.items():
                             groups.append({
                                 'group_id': discussion_id,
-                                'target_id': discussion_info.get('task_description', 'ADK_Standard_Discussion')[:50],
+                                'target_id': discussion_info.get('task_description', 'ADK_Official_Discussion')[:50],
                                 'missile_id': 'N/A',
                                 'status': discussion_info.get('status', 'active'),
                                 'participants': discussion_info.get('participants', []),
@@ -260,15 +260,15 @@ class ADKDevUI:
                                 'coordination_rounds': 0,
                                 'max_rounds': 1,
                                 'timeout': 600,
-                                'session_type': f"ADK_Standard_{discussion_info.get('type', 'Unknown').title()}",
-                                'source': 'adk_standard_discussion_system',
-                                'discussion_type': discussion_info.get('type', 'unknown'),
+                                'session_type': f"ADK_Official_{discussion_info.get('pattern_type', 'Unknown').title()}",
+                                'source': 'adk_official_discussion_system',
+                                'discussion_type': discussion_info.get('pattern_type', 'unknown'),
                                 'agent_class': discussion_info.get('agent_class', 'Unknown')
                             })
 
-                        logger.info("✅ 成功检查ADK标准讨论系统")
+                        logger.info("✅ 成功检查ADK官方讨论系统")
                 except Exception as e:
-                    logger.warning(f"获取ADK标准讨论组信息失败: {e}")
+                    logger.warning(f"获取ADK官方讨论组信息失败: {e}")
 
                 return jsonify({'groups': groups})
 
@@ -278,11 +278,11 @@ class ADKDevUI:
 
         @self.app.route('/api/discussion-groups/debug')
         def debug_discussion_groups():
-            """调试API - ADK标准讨论系统状态诊断"""
+            """调试API - ADK官方讨论系统状态诊断"""
             try:
                 debug_info = {
                     'multi_agent_system_status': 'not_initialized',
-                    'adk_standard_discussion_system_status': 'not_found',
+                    'adk_official_discussion_system_status': 'not_found',
                     'discussion_groups_total': 0,
                     'detailed_sources': {},
                     'system_diagnostics': {}
@@ -293,19 +293,19 @@ class ADKDevUI:
 
                 debug_info['multi_agent_system_status'] = 'initialized'
 
-                # 只检查ADK标准讨论系统
-                if hasattr(self.multi_agent_system, '_adk_standard_discussion_system'):
-                    debug_info['adk_standard_discussion_system_status'] = 'found'
+                # 检查ADK官方讨论系统
+                if hasattr(self.multi_agent_system, '_adk_official_discussion_system'):
+                    debug_info['adk_official_discussion_system_status'] = 'found'
                     try:
-                        # 使用全局Session管理器检查ADK标准讨论组
+                        # 使用全局Session管理器检查ADK官方讨论组
                         from src.utils.adk_session_manager import get_adk_session_manager
 
                         session_manager = get_adk_session_manager()
-                        standard_discussions = session_manager.get_adk_discussions()
+                        official_discussions = session_manager.get_adk_discussions()
                         session_stats = session_manager.get_statistics()
 
-                        debug_info['detailed_sources']['adk_standard_discussions_count'] = len(standard_discussions)
-                        debug_info['discussion_groups_total'] = len(standard_discussions)
+                        debug_info['detailed_sources']['adk_official_discussions_count'] = len(official_discussions)
+                        debug_info['discussion_groups_total'] = len(official_discussions)
 
                         # 详细的ADK标准讨论组信息
                         debug_info['detailed_sources']['adk_standard_discussions_detail'] = {}
@@ -338,24 +338,24 @@ class ADKDevUI:
 
                 groups = []
 
-                # 只从ADK标准讨论系统获取
+                # 从ADK官方讨论系统获取
                 try:
-                    if hasattr(self.multi_agent_system, '_adk_standard_discussion_system'):
+                    if hasattr(self.multi_agent_system, '_adk_official_discussion_system'):
                         from src.utils.adk_session_manager import get_adk_session_manager
 
                         session_manager = get_adk_session_manager()
-                        adk_standard_discussions = session_manager.get_adk_discussions()
+                        adk_official_discussions = session_manager.get_adk_discussions()
 
-                        for discussion_id, discussion_info in adk_standard_discussions.items():
+                        for discussion_id, discussion_info in adk_official_discussions.items():
                             groups.append({
                                 'id': discussion_id,
-                                'name': f"adk_standard_{discussion_info.get('type', 'unknown')}",
-                                'type': f"ADK_Standard_{discussion_info.get('type', 'Unknown').title()}",
+                                'name': f"adk_official_{discussion_info.get('pattern_type', 'unknown')}",
+                                'type': f"ADK_Official_{discussion_info.get('pattern_type', 'Unknown').title()}",
                                 'status': discussion_info.get('status', 'active'),
-                                'participants_count': len(discussion_info.get('participants', []))
+                                'participants_count': discussion_info.get('agent_count', 0)
                             })
                 except Exception as e:
-                    logger.warning(f"获取ADK标准讨论组列表失败: {e}")
+                    logger.warning(f"获取ADK官方讨论组列表失败: {e}")
 
                 return jsonify({'groups': groups})
 
@@ -365,26 +365,26 @@ class ADKDevUI:
 
         @self.app.route('/api/discussion-groups/<group_id>/details')
         def get_discussion_group_details(group_id):
-            """获取ADK标准讨论组详细信息API"""
+            """获取ADK官方讨论组详细信息API"""
             try:
                 if not self.multi_agent_system:
                     return jsonify({'error': '多智能体系统未启动'})
 
-                # 从ADK标准讨论系统获取讨论组详细信息
+                # 从ADK官方讨论系统获取讨论组详细信息
                 try:
-                    if hasattr(self.multi_agent_system, '_adk_standard_discussion_system'):
+                    if hasattr(self.multi_agent_system, '_adk_official_discussion_system'):
                         from src.utils.adk_session_manager import get_adk_session_manager
 
                         session_manager = get_adk_session_manager()
-                        adk_standard_discussions = session_manager.get_adk_discussions()
+                        adk_official_discussions = session_manager.get_adk_discussions()
 
-                        group_info = adk_standard_discussions.get(group_id)
+                        group_info = adk_official_discussions.get(group_id)
                         if not group_info:
-                            return jsonify({'error': f'ADK标准讨论组 {group_id} 不存在'})
+                            return jsonify({'error': f'ADK官方讨论组 {group_id} 不存在'})
 
                         details = {
                             'group_id': group_id,
-                            'target_id': group_info.get('task_description', 'ADK_Standard_Discussion')[:50],
+                            'target_id': group_info.get('task_description', 'ADK_Official_Discussion')[:50],
                             'missile_id': 'N/A',
                             'status': group_info.get('status', 'active'),
                             'participants': group_info.get('participants', []),
@@ -393,11 +393,11 @@ class ADKDevUI:
                             'coordination_rounds': 0,
                             'max_rounds': 1,
                             'timeout': 600,
-                            'discussion_type': group_info.get('type', 'unknown'),
+                            'discussion_type': group_info.get('pattern_type', 'unknown'),
                             'agent_class': group_info.get('agent_class', 'Unknown'),
                             'task_description': group_info.get('task_description', ''),
-                            'session_type': f"ADK_Standard_{group_info.get('type', 'Unknown').title()}",
-                            'source': 'adk_standard_discussion_system'
+                            'session_type': f"ADK_Official_{group_info.get('pattern_type', 'Unknown').title()}",
+                            'source': 'adk_official_discussion_system'
                         }
 
                         return jsonify(details)

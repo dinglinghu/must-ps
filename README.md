@@ -36,7 +36,7 @@
 ### 智能体层次结构
 ```
 仿真调度智能体 (SimulationSchedulerAgent)
-├── ADK标准讨论系统 (ADKStandardDiscussionSystem)
+├── ADK官方讨论系统 (ADKOfficialDiscussionSystem)
 ├── 卫星智能体工厂 (SatelliteAgentFactory)
 │   └── Walker星座 → ADK卫星智能体 (1:1映射)
 ├── 导弹目标分发器 (MissileTargetDistributor)
@@ -128,8 +128,7 @@ python demos/demo_basic_multi_agent.py
 # 滚动规划演示
 python demos/demo_rolling_planning.py
 
-# 甘特图可视化演示
-python demos/demo_gantt_visualization.py
+# 🧹 已清理：甘特图可视化演示已删除
 ```
 
 ## 📊 系统功能
@@ -148,7 +147,7 @@ python demos/demo_gantt_visualization.py
 
 ### 3. 可视化分析
 - **实时监控**: 实时查看系统运行状态
-- **甘特图生成**: 自动生成多层次甘特图
+- **数据可视化**: 自动生成分析图表
 - **性能分析**: 自动分析系统性能和瓶颈
 - **优化建议**: 基于分析结果提供优化建议
 
@@ -287,14 +286,14 @@ python tests/test_complete_workflow.py
 - ✅ 完整的ADK多智能体架构实现
 - ✅ 滚动任务规划机制
 - ✅ 四种ADK官方讨论组模式
-- ✅ 分层甘特图可视化系统
+- ✅ 数据可视化和分析系统
 - ✅ 专业UI监控界面
 - ✅ 完整的文档和测试用例
 
 ### v1.0.0 (2025-07-30)
 - ✅ 基础多智能体系统
 - ✅ STK集成
-- ✅ 基础甘特图功能
+- ✅ 基础数据可视化功能
 
 ## 🤝 贡献
 
