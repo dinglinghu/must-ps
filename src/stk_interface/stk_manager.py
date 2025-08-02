@@ -9,6 +9,7 @@ import win32com.client
 import comtypes.client
 import time
 import numpy as np
+import threading
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -17,19 +18,49 @@ from ..utils.time_manager import UnifiedTimeManager
 logger = logging.getLogger(__name__)
 
 class STKManager:
-    """STK管理器类"""
-    
+    """统一STK管理器类 - 合并了STKManager和STKScenarioManager的功能"""
+
+    # 单例模式支持
+    _instance = None
+    _lock = threading.Lock()
+
+    # 🔧 新增：场景生命周期状态
+    _scenario_lifecycle_state = {
+        'initialized': False,
+        'scenario_created': False,
+        'scenario_locked': False,  # 场景锁定，禁止重新创建
+        'creation_source': None,
+        'creation_timestamp': None
+    }
+
+    def __new__(cls, config: Dict[str, Any] = None):
+        """单例模式实现"""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(STKManager, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self, config: Dict[str, Any]):
         """
-        初始化STK管理器
-        
+        初始化统一STK管理器
+
         Args:
             config: STK配置参数
         """
+        # 防止重复初始化
+        if hasattr(self, '_initialized'):
+            return
+
+        self._initialized = True
+
         self.config = config
         self.stk = None
         self.root = None
         self.scenario = None
+
+        # 🔧 新增：STK位置计算器集成
+        self._position_calculator = None
         self.is_connected = False
 
         # 现有项目检测配置
@@ -37,6 +68,15 @@ class STKManager:
         self.existing_project_wait_time = config.get('existing_project_wait_time', 5)
         self.skip_creation = False  # 是否跳过创建步骤
         self.existing_project_detected = False  # 是否检测到现有项目
+
+        # 🔧 合并STKScenarioManager功能：场景状态跟踪
+        self._scenario_created = False
+        self._scenario_name = None
+        self._scenario_creation_time = None
+        self._satellite_count = 0
+        self._creation_source = None
+        self._stk_instance_id = None
+        self._stk_version = None
 
         # 🕐 初始化统一时间管理器
         self.time_manager = UnifiedTimeManager()
@@ -81,15 +121,175 @@ class STKManager:
         
         # 使用统一时间管理器
         self.time_format_manager = None  # 已被统一时间管理器替代
-        
-    def connect(self) -> bool:
+
+        logger.info("🔧 统一STK管理器初始化完成")
+
+    # ==================== 场景生命周期管理 ====================
+
+    @classmethod
+    def is_scenario_lifecycle_locked(cls) -> bool:
+        """检查场景生命周期是否已锁定"""
+        return cls._scenario_lifecycle_state['scenario_locked']
+
+    @classmethod
+    def lock_scenario_lifecycle(cls, creation_source: str = "unknown"):
+        """锁定场景生命周期，禁止后续重新创建"""
+        with cls._lock:
+            cls._scenario_lifecycle_state.update({
+                'scenario_locked': True,
+                'creation_source': creation_source,
+                'creation_timestamp': datetime.now().isoformat()
+            })
+            logger.info(f"🔒 STK场景生命周期已锁定 (来源: {creation_source})")
+            logger.info("🚫 后续所有智能体工具只能连接现有场景，禁止重新初始化")
+
+    @classmethod
+    def get_scenario_lifecycle_info(cls) -> Dict[str, Any]:
+        """获取场景生命周期信息"""
+        return cls._scenario_lifecycle_state.copy()
+
+    def enforce_scenario_connection_only(self, caller_name: str = "unknown") -> bool:
+        """强制只能连接现有场景，禁止创建新场景"""
+        if self.is_scenario_lifecycle_locked():
+            if not self.is_connected or not self.scenario:
+                logger.error(f"❌ {caller_name} 尝试使用STK，但场景已锁定且当前无有效连接")
+                logger.error("❌ 场景生命周期已锁定，必须使用现有场景")
+                raise RuntimeError(f"{caller_name} 必须使用现有的STK场景，场景生命周期已锁定")
+
+            logger.info(f"✅ {caller_name} 连接到现有STK场景: {self.scenario.InstanceName}")
+            return True
+
+        return False  # 场景未锁定，允许创建
+
+    # ==================== 场景管理功能 (原STKScenarioManager) ====================
+
+    def is_scenario_created(self) -> bool:
+        """检查场景是否已创建"""
+        return self._scenario_created
+
+    def get_scenario_info(self) -> Dict[str, Any]:
+        """获取场景信息"""
+        # 实时同步状态
+        self._sync_scenario_state()
+
+        return {
+            'created': self._scenario_created,
+            'name': self._scenario_name,
+            'creation_time': self._scenario_creation_time,
+            'satellite_count': self._satellite_count,
+            'creation_source': self._creation_source,
+            'stk_instance_id': self._stk_instance_id,
+            'stk_version': self._stk_version
+        }
+
+    def should_skip_creation(self, creation_source: str = "unknown") -> bool:
+        """判断是否应该跳过场景创建"""
+        with self._lock:
+            if self._scenario_created:
+                logger.info(f"🔒 场景已存在，跳过创建请求 (来源: {creation_source})")
+                logger.info(f"   现有场景: {self._scenario_name} (来源: {self._creation_source})")
+                return True
+            return False
+
+    def register_scenario_creation(
+        self,
+        scenario_name: str,
+        satellite_count: int = 0,
+        creation_source: str = "unknown",
+        stk_instance_id: str = None,
+        stk_version: str = None
+    ) -> bool:
+        """注册场景创建"""
+        with self._lock:
+            if self._scenario_created:
+                logger.warning(f"⚠️ 场景已存在，拒绝重复创建: {self._scenario_name}")
+                logger.warning(f"   现有场景: {self._scenario_name} (来源: {self._creation_source})")
+                logger.warning(f"   尝试创建: {scenario_name} (来源: {creation_source})")
+                return False
+
+            # 注册新场景
+            self._scenario_created = True
+            self._scenario_name = scenario_name
+            self._scenario_creation_time = datetime.now()
+            self._satellite_count = satellite_count
+            self._creation_source = creation_source
+            self._stk_instance_id = stk_instance_id or (str(id(self.stk)) if self.stk else None)
+            self._stk_version = stk_version
+
+            logger.info(f"✅ 场景创建已注册: {scenario_name}")
+            logger.info(f"   卫星数量: {satellite_count}")
+            logger.info(f"   创建来源: {creation_source}")
+            logger.info(f"   创建时间: {self._scenario_creation_time}")
+
+            return True
+
+    def update_satellite_count(self, satellite_count: int):
+        """更新卫星数量"""
+        with self._lock:
+            if self._scenario_created:
+                old_count = self._satellite_count
+                self._satellite_count = satellite_count
+                logger.info(f"📊 更新卫星数量: {old_count} → {satellite_count}")
+            else:
+                logger.warning("⚠️ 场景未创建，无法更新卫星数量")
+
+    def _sync_scenario_state(self):
+        """同步场景状态"""
+        try:
+            if self.is_connected and self.scenario:
+                # 更新场景信息
+                if not self._scenario_created:
+                    self._scenario_created = True
+                    self._scenario_name = self.scenario.InstanceName
+                    self._creation_source = "STKManager"
+                    self._stk_instance_id = str(id(self.stk)) if self.stk else None
+                    self._scenario_creation_time = datetime.now()
+
+                # 更新卫星数量
+                satellites = self.get_objects("Satellite")
+                self._satellite_count = len(satellites)
+
+        except Exception as e:
+            logger.debug(f"同步场景状态失败: {e}")
+
+    def get_creation_summary(self) -> str:
+        """获取创建摘要"""
+        if not self._scenario_created:
+            return "❌ 没有已注册的STK场景"
+
+        time_str = self._scenario_creation_time.strftime("%Y-%m-%d %H:%M:%S") if self._scenario_creation_time else "未知"
+
+        return (
+            f"✅ STK场景已注册\n"
+            f"   场景名称: {self._scenario_name}\n"
+            f"   卫星数量: {self._satellite_count}\n"
+            f"   创建时间: {time_str}\n"
+            f"   创建来源: {self._creation_source}\n"
+            f"   STK版本: {self._stk_version or '未知'}"
+        )
+
+    # ==================== STK连接和操作功能 ====================
+
+    def connect(self, caller_name: str = "STKManager", allow_scenario_creation: bool = True) -> bool:
         """
         连接到STK
+
+        Args:
+            caller_name: 调用者名称，用于日志记录
+            allow_scenario_creation: 是否允许创建新场景（智能体工具应设为False）
 
         Returns:
             连接是否成功
         """
         try:
+            # 🔧 新增：检查场景生命周期状态
+            if self.is_scenario_lifecycle_locked():
+                if not allow_scenario_creation:
+                    logger.info(f"🔒 {caller_name} 连接STK - 场景已锁定，只能连接现有场景")
+                    return self._connect_to_existing_scenario_only(caller_name)
+                else:
+                    logger.warning(f"⚠️ {caller_name} 尝试创建场景，但场景生命周期已锁定")
+                    return self._connect_to_existing_scenario_only(caller_name)
             # 初始化COM组件
             import pythoncom
             try:
@@ -98,14 +298,37 @@ class STKManager:
             except Exception as e:
                 logger.debug(f"COM组件已初始化或初始化失败: {e}")
 
-            # 尝试获取已运行的STK实例
+            # 🔧 修复：优先连接到已运行的STK实例，确保场景持久性
+            stk_instance_found = False
             try:
                 self.stk = win32com.client.GetActiveObject("STK12.Application")
-                logger.info("连接到已运行的STK实例")
-            except Exception:
-                # 如果没有运行的实例，创建新的
-                self.stk = win32com.client.Dispatch("STK12.Application")
-                logger.info("创建新的STK实例")
+                logger.info("✅ 连接到已运行的STK实例")
+                stk_instance_found = True
+
+                # 检查STK实例信息
+                try:
+                    version = self.stk.Version
+                    logger.info(f"📊 STK版本: {version}")
+                except Exception as e:
+                    logger.debug(f"获取STK版本失败: {e}")
+
+            except Exception as e:
+                logger.debug(f"获取已运行STK实例失败: {e}")
+
+                # 🔧 重要：只有在确实没有STK实例时才创建新的
+                try:
+                    # 再次尝试，有时第一次会失败
+                    import time
+                    time.sleep(1)
+                    self.stk = win32com.client.GetActiveObject("STK12.Application")
+                    logger.info("✅ 第二次尝试连接到已运行的STK实例成功")
+                    stk_instance_found = True
+                except Exception as e2:
+                    logger.debug(f"第二次尝试也失败: {e2}")
+                    # 确实没有运行的实例，创建新的
+                    self.stk = win32com.client.Dispatch("STK12.Application")
+                    logger.info("🆕 创建新的STK实例")
+                    stk_instance_found = False
             
             # 设置STK可见性和用户控制
             self.stk.Visible = True
@@ -117,36 +340,101 @@ class STKManager:
             # 设置日期格式
             self.root.UnitPreferences.SetCurrentUnit("DateFormat", "UTCG")
             
-            # 检测现有项目并决定是否跳过创建
+            # 🔧 修复：检测现有项目并决定是否跳过创建
             if self.detect_existing_project:
-                existing_detected = self._detect_existing_project()
-                if existing_detected:
-                    self.skip_creation = True
-                    self.existing_project_detected = True
+                # 🔧 新增：如果连接到已有STK实例，更积极地检查现有场景
+                if stk_instance_found:
+                    logger.info("🔍 连接到已有STK实例，检查现有场景...")
+                    current_scenario = None
+                    try:
+                        current_scenario = self.root.CurrentScenario
+                        if current_scenario:
+                            scenario_name = current_scenario.InstanceName
+                            logger.info(f"🔍 发现现有场景: {scenario_name}")
+
+                            # 检查场景中的卫星数量
+                            try:
+                                children_count = current_scenario.Children.Count
+                                satellite_count = 0
+                                for i in range(children_count):
+                                    try:
+                                        child = current_scenario.Children.Item(i)
+                                        if getattr(child, 'ClassName', '') == 'Satellite':
+                                            satellite_count += 1
+                                    except:
+                                        continue
+
+                                logger.info(f"📊 现有场景包含 {satellite_count} 颗卫星")
+
+                                if satellite_count > 0:
+                                    logger.info("✅ 检测到现有卫星，保持使用现有场景")
+                                    self.skip_creation = True
+                                    self.existing_project_detected = True
+                                    self.scenario = current_scenario
+                                else:
+                                    logger.info("⚠️ 现有场景为空，将创建新对象")
+
+                            except Exception as e:
+                                logger.debug(f"检查场景内容失败: {e}")
+                        else:
+                            logger.info("🆕 已有STK实例中没有当前场景")
+                    except Exception as e:
+                        logger.debug(f"检查现有场景失败: {e}")
+
+                # 常规的现有项目检测
+                existing_detected = False  # 🔧 修复：初始化变量
+                if not self.skip_creation:
+                    existing_detected = self._detect_existing_project()
+                    if existing_detected:
+                        self.skip_creation = True
+                        self.existing_project_detected = True
+
+                if existing_detected or self.skip_creation:  # 🔧 修复：检查两个条件
+                    if not self.existing_project_detected:
+                        self.existing_project_detected = True
                     logger.info("🔍 检测到现有STK项目，将跳过场景、星座、载荷、导弹的创建")
                     logger.info(f"⏰ 等待 {self.existing_project_wait_time} 秒以确保项目稳定...")
                     import time
                     time.sleep(self.existing_project_wait_time)
 
                     # 获取当前场景
-                    try:
-                        self.scenario = self.root.CurrentScenario
-                        logger.info(f"✅ 使用现有场景: {self.scenario.InstanceName}")
-                    except Exception as e:
-                        logger.warning(f"获取现有场景失败: {e}")
-                        self.skip_creation = False  # 如果无法获取现有场景，则不跳过创建
-                else:
+                    if not self.scenario:
+                        try:
+                            self.scenario = self.root.CurrentScenario
+                            logger.info(f"✅ 使用现有场景: {self.scenario.InstanceName}")
+                        except Exception as e:
+                            logger.warning(f"获取现有场景失败: {e}")
+                            self.skip_creation = False  # 如果无法获取现有场景，则不跳过创建
+                elif not self.skip_creation:  # 🔧 修复：只有在没有保持现有场景时才显示此消息
                     logger.info("🆕 未检测到现有项目，将创建新的场景和对象")
 
-            # 创建或打开场景（仅在未检测到现有项目时）
+            # 🔧 修复：创建或打开场景（仅在未检测到现有项目时）
             if not self.skip_creation:
                 scenario_name = self.config.get('scenario', {}).get('name', 'MCP_Created_Scenario')
+
+                # 🔧 修复：检查是否已有场景，避免不必要的关闭
+                current_scenario = None
                 try:
-                    # 尝试关闭现有场景
-                    self.root.CloseScenario()
-                    logger.info("关闭现有场景")
-                except:
-                    pass
+                    current_scenario = self.root.CurrentScenario
+                    if current_scenario:
+                        current_name = current_scenario.InstanceName
+                        logger.info(f"🔍 当前场景: {current_name}")
+
+                        # 如果当前场景名称合适，直接使用
+                        if scenario_name in current_name or "MCP_Created_Scenario" in current_name:
+                            logger.info(f"✅ 重用现有场景: {current_name}")
+                            self.scenario = current_scenario
+                            return True  # 跳过场景创建
+                except Exception as e:
+                    logger.debug(f"检查当前场景失败: {e}")
+
+                # 只有在需要时才关闭现有场景
+                try:
+                    if current_scenario:
+                        self.root.CloseScenario()
+                        logger.info("关闭现有场景")
+                except Exception as e:
+                    logger.debug(f"关闭场景失败: {e}")
 
                 try:
                     self.root.NewScenario(scenario_name)
@@ -155,8 +443,12 @@ class STKManager:
                 except Exception as e:
                     logger.warning(f"创建场景失败: {e}")
                     # 尝试获取当前场景
-                    self.scenario = self.root.CurrentScenario
-                    logger.info("使用当前场景")
+                    try:
+                        self.scenario = self.root.CurrentScenario
+                        logger.info("使用当前场景")
+                    except Exception as e2:
+                        logger.error(f"获取当前场景也失败: {e2}")
+                        return False
             
             # 设置连接状态（在时间设置之前）
             self.is_connected = True
@@ -164,32 +456,117 @@ class STKManager:
             # 设置场景时间
             self._setup_scenario_time()
 
+            # 🔧 新增：注册场景创建到统一管理器
+            if self.scenario and not self._scenario_created:
+                scenario_name = self.scenario.InstanceName
+                satellites = self.get_objects("Satellite")
+                self.register_scenario_creation(
+                    scenario_name=scenario_name,
+                    satellite_count=len(satellites),
+                    creation_source=caller_name,
+                    stk_instance_id=str(id(self.stk)),
+                    stk_version="STK12"
+                )
+
+            # 🔧 新增：首次场景创建后锁定生命周期
+            if self.scenario and not self.is_scenario_lifecycle_locked() and allow_scenario_creation:
+                self.lock_scenario_lifecycle(caller_name)
+
             logger.info("STK连接成功")
             return True
-            
+
         except Exception as e:
             logger.error(f"STK连接失败: {e}")
             self.is_connected = False
             return False
+
+    def _connect_to_existing_scenario_only(self, caller_name: str) -> bool:
+        """只连接现有场景，禁止创建新场景"""
+        try:
+            # 初始化COM组件
+            import pythoncom
+            try:
+                pythoncom.CoInitialize()
+                logger.debug("COM组件初始化成功")
+            except Exception as e:
+                logger.debug(f"COM组件已初始化或初始化失败: {e}")
+
+            # 🔧 强制只连接现有STK实例
+            try:
+                self.stk = win32com.client.GetActiveObject("STK12.Application")
+                logger.info(f"✅ {caller_name} 连接到现有STK实例")
+            except Exception as e:
+                logger.error(f"❌ {caller_name} 无法连接到现有STK实例: {e}")
+                logger.error("❌ 场景生命周期已锁定，必须有运行中的STK实例")
+                raise RuntimeError(f"{caller_name} 必须连接到现有的STK实例，场景生命周期已锁定")
+
+            # 设置STK可见性和用户控制
+            self.stk.Visible = True
+            self.stk.UserControl = True
+
+            # 获取根对象
+            self.root = self.stk.Personality2
+
+            # 🔧 强制只获取现有场景
+            try:
+                self.scenario = self.root.CurrentScenario
+                if not self.scenario:
+                    logger.error(f"❌ {caller_name} 没有找到现有STK场景")
+                    raise RuntimeError(f"{caller_name} 必须使用现有的STK场景")
+
+                scenario_name = self.scenario.InstanceName
+                logger.info(f"✅ {caller_name} 连接到现有场景: {scenario_name}")
+
+                # 同步场景状态
+                satellites = self.get_objects("Satellite")
+                self._satellite_count = len(satellites)
+                logger.info(f"📊 现有场景包含 {len(satellites)} 颗卫星")
+
+            except Exception as e:
+                logger.error(f"❌ {caller_name} 获取现有场景失败: {e}")
+                raise RuntimeError(f"{caller_name} 必须使用现有的STK场景")
+
+            # 设置连接状态
+            self.is_connected = True
+
+            logger.info(f"✅ {caller_name} 成功连接到现有STK场景")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ {caller_name} 连接现有场景失败: {e}")
+            return False
     
     def disconnect(self):
-        """断开STK连接"""
+        """🔧 修复：断开STK连接但保持STK实例运行以维持场景持久性"""
         if self.stk:
             try:
-                self.stk.Quit()
-                self.stk = None
-                self.root = None
-                self.scenario = None
-                self.is_connected = False
-                logger.info("STK连接已断开")
+                # 🔧 关键修复：不调用Quit()，保持STK实例运行
+                # self.stk.Quit()  # 注释掉，保持STK实例运行
 
-                # 清理COM组件
-                try:
-                    import pythoncom
-                    pythoncom.CoUninitialize()
-                    logger.debug("COM组件清理完成")
-                except Exception as e:
-                    logger.debug(f"COM组件清理失败: {e}")
+                # 保存当前场景信息
+                if self.scenario:
+                    try:
+                        scenario_name = self.scenario.InstanceName
+                        children_count = self.scenario.Children.Count
+                        logger.info(f"📊 保存场景状态: {scenario_name}, {children_count}个对象")
+                    except Exception as e:
+                        logger.debug(f"保存场景状态失败: {e}")
+
+                # 🔧 重要：不设置为None，保持引用以维持场景持久性
+                # self.stk = None  # 注释掉，保持STK实例
+                # self.root = None  # 注释掉，保持根对象
+                # self.scenario = None  # 注释掉，保持场景引用
+
+                self.is_connected = False
+                logger.info("🔌 STK连接已断开，但STK实例和场景保持运行以维持持久性")
+
+                # 🔧 不清理COM组件，保持连接
+                # try:
+                #     import pythoncom
+                #     pythoncom.CoUninitialize()
+                #     logger.debug("COM组件清理完成")
+                # except Exception as e:
+                #     logger.debug(f"COM组件清理失败: {e}")
 
             except Exception as e:
                 logger.error(f"断开STK连接时出错: {e}")
@@ -202,37 +579,60 @@ class STKManager:
             bool: True表示检测到现有项目，False表示没有
         """
         try:
-            # 检查是否有当前场景
-            current_scenario = self.root.CurrentScenario
+            # 🔧 调试：检查是否有当前场景
+            current_scenario = None
+            try:
+                current_scenario = self.root.CurrentScenario
+                logger.debug(f"CurrentScenario对象: {current_scenario}")
+            except Exception as e:
+                logger.debug(f"获取CurrentScenario失败: {e}")
+
             if current_scenario:
                 scenario_name = current_scenario.InstanceName
                 logger.info(f"🔍 检测到现有场景: {scenario_name}")
 
-                # 检查场景中是否有对象
-                children_count = current_scenario.Children.Count
-                if children_count > 0:
+                # 🔧 修复：检查场景中是否有对象，增加异常处理
+                try:
+                    children_count = current_scenario.Children.Count
                     logger.info(f"📊 现有场景包含 {children_count} 个对象")
 
-                    # 列出现有对象类型
-                    object_types = {}
-                    for i in range(children_count):
-                        child = current_scenario.Children.Item(i)
-                        obj_type = child.ClassName
-                        object_types[obj_type] = object_types.get(obj_type, 0) + 1
+                    if children_count > 0:
+                        # 列出现有对象类型
+                        object_types = {}
+                        satellite_count = 0
 
-                    logger.info("📋 现有对象统计:")
-                    for obj_type, count in object_types.items():
-                        logger.info(f"   {obj_type}: {count}个")
+                        for i in range(children_count):
+                            try:
+                                child = current_scenario.Children.Item(i)
+                                obj_type = getattr(child, 'ClassName', 'Unknown')
+                                object_types[obj_type] = object_types.get(obj_type, 0) + 1
 
-                    # 如果有卫星、传感器或导弹，认为是现有项目
-                    if any(obj_type in ['Satellite', 'Sensor', 'Missile'] for obj_type in object_types.keys()):
-                        logger.info("✅ 检测到现有的卫星/传感器/导弹对象，确认为现有项目")
-                        return True
+                                # 特别统计卫星数量
+                                if obj_type == 'Satellite':
+                                    satellite_count += 1
+
+                            except Exception as e:
+                                logger.debug(f"检查对象 {i} 失败: {e}")
+                                continue
+
+                        logger.info("📋 现有对象统计:")
+                        for obj_type, count in object_types.items():
+                            logger.info(f"   {obj_type}: {count}个")
+
+                        # 🔧 关键修复：只有存在卫星时才跳过创建
+                        if satellite_count > 0:
+                            logger.info(f"✅ 检测到现有的{satellite_count}颗卫星，确认为现有项目，跳过星座创建")
+                            return True
+                        else:
+                            logger.info("⚠️ 场景中没有卫星对象，需要创建星座")
+                            return False
                     else:
-                        logger.info("⚠️  场景中没有相关对象，不视为现有项目")
+                        logger.info("📭 现有场景为空，不视为现有项目")
                         return False
-                else:
-                    logger.info("📭 现有场景为空，不视为现有项目")
+
+                except Exception as e:
+                    logger.warning(f"检查场景对象失败: {e}")
+                    # 如果检查失败，保守地认为没有现有项目
                     return False
             else:
                 logger.info("🆕 没有检测到现有场景")
@@ -242,8 +642,8 @@ class STKManager:
             logger.warning(f"检测现有项目时出错: {e}")
             return False
 
-    def should_skip_creation(self) -> bool:
-        """检查是否应该跳过创建步骤"""
+    def should_skip_stk_creation(self) -> bool:
+        """检查是否应该跳过STK创建步骤"""
         return self.skip_creation
 
     def is_existing_project_detected(self) -> bool:
@@ -1961,7 +2361,7 @@ class STKManager:
             return False
 
     def _safe_propagate_all_satellites(self) -> bool:
-        """安全传播所有卫星 - 基于成功经验"""
+        """安全传播所有卫星 - 使用与位置计算器相同的方法"""
         try:
             logger.info("开始传播所有卫星...")
             satellites = self.get_objects("Satellite")
@@ -1971,14 +2371,44 @@ class STKManager:
                 return False
 
             success_count = 0
-            for satellite_id in satellites:
+            for satellite_path in satellites:
                 try:
-                    satellite = self.scenario.Children.Item(satellite_id)
-                    satellite.Propagator.Propagate()
-                    success_count += 1
-                    logger.info(f"卫星 {satellite_id} 传播成功")
+                    # 提取卫星名称
+                    satellite_name = satellite_path.split('/')[-1]
+
+                    # 使用与位置计算器相同的方法获取卫星对象
+                    satellite = None
+
+                    # 方法1：直接匹配
+                    for i in range(self.scenario.Children.Count):
+                        child = self.scenario.Children.Item(i)
+                        if (hasattr(child, 'ClassName') and child.ClassName == 'Satellite' and
+                            hasattr(child, 'InstanceName') and child.InstanceName == satellite_name):
+                            satellite = child
+                            break
+
+                    # 方法2：如果直接匹配失败，尝试遍历匹配
+                    if not satellite:
+                        for i in range(self.scenario.Children.Count):
+                            try:
+                                child = self.scenario.Children.Item(i)
+                                if (getattr(child, 'ClassName', '') == 'Satellite' and
+                                    getattr(child, 'InstanceName', '') == satellite_name):
+                                    satellite = child
+                                    break
+                            except:
+                                continue
+
+                    if satellite:
+                        # 传播卫星
+                        satellite.Propagator.Propagate()
+                        success_count += 1
+                        logger.debug(f"✅ 卫星 {satellite_name} 传播成功")
+                    else:
+                        logger.warning(f"❌ 未找到卫星对象: {satellite_name}")
+
                 except Exception as e:
-                    logger.warning(f"卫星 {satellite_id} 传播失败: {e}")
+                    logger.warning(f"❌ 卫星 {satellite_name} 传播失败: {e}")
 
             success_rate = success_count / len(satellites)
             logger.info(f"传播结果: {success_count}/{len(satellites)} 成功 ({success_rate*100:.1f}%)")
@@ -2104,14 +2534,71 @@ class STKManager:
             logger.error(f"获取导弹 {missile_id} 的发射时间失败: {e}")
             return None
 
+    def get_position_calculator(self):
+        """🔧 新增：获取STK位置计算器"""
+        try:
+            if self._position_calculator is None:
+                from .stk_position_calculator import STKPositionCalculator
+                self._position_calculator = STKPositionCalculator(self)
+                logger.info("✅ STK位置计算器初始化成功")
+
+            return self._position_calculator
+
+        except Exception as e:
+            logger.error(f"❌ STK位置计算器初始化失败: {e}")
+            return None
+
 
 # 全局STK管理器实例
 _stk_manager = None
 
 def get_stk_manager(config_manager=None):
-    """获取全局STK管理器实例"""
+    """获取全局统一STK管理器实例"""
     global _stk_manager
     if _stk_manager is None and config_manager:
         stk_config = config_manager.get_stk_config()
         _stk_manager = STKManager(stk_config)
     return _stk_manager
+
+# ==================== 兼容性函数 (原STKScenarioManager接口) ====================
+
+def get_stk_scenario_manager():
+    """获取STK场景管理器 - 现在返回统一的STK管理器"""
+    # 为了兼容性，返回同一个STK管理器实例
+    from src.utils.config_manager import get_config_manager
+    config_manager = get_config_manager()
+    return get_stk_manager(config_manager)
+
+def should_skip_stk_scenario_creation(creation_source: str = "unknown") -> bool:
+    """全局函数：判断是否应该跳过STK场景创建"""
+    manager = get_stk_scenario_manager()
+    return manager.should_skip_creation(creation_source) if manager else False
+
+def register_stk_scenario_creation(
+    scenario_name: str,
+    satellite_count: int = 0,
+    creation_source: str = "unknown",
+    stk_instance_id: str = None,
+    stk_version: str = None
+) -> bool:
+    """全局函数：注册STK场景创建"""
+    manager = get_stk_scenario_manager()
+    return manager.register_scenario_creation(
+        scenario_name, satellite_count, creation_source, stk_instance_id, stk_version
+    ) if manager else False
+
+def update_stk_satellite_count(satellite_count: int):
+    """全局函数：更新卫星数量"""
+    manager = get_stk_scenario_manager()
+    if manager:
+        manager.update_satellite_count(satellite_count)
+
+
+def get_stk_position_calculator():
+    """🔧 新增：获取全局STK位置计算器实例"""
+    global _stk_manager
+    if _stk_manager is not None:
+        return _stk_manager.get_position_calculator()
+    else:
+        logger.warning("STK管理器未初始化，无法获取位置计算器")
+        return None

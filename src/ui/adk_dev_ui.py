@@ -667,6 +667,43 @@ class ADKDevUI:
             """客户端断开连接事件"""
             logger.info("客户端已断开连接")
         
+        @self.socketio.on('connect_scheduler')
+        def handle_connect_scheduler(data):
+            """连接仿真调度智能体事件 - 实现预期的启动流程"""
+            try:
+                self._log_message("🔄 开始连接仿真调度智能体...")
+
+                # 检查是否已经初始化
+                if self.multi_agent_system:
+                    self.socketio.emit('scheduler_connected', {
+                        'success': True,
+                        'message': '仿真调度智能体已连接',
+                        'status': 'already_connected'
+                    })
+                    return
+
+                # 初始化多智能体系统
+                self._log_message("🚀 初始化多智能体系统...")
+                self.multi_agent_system = MultiAgentSystem()
+
+                # 设置系统状态
+                self.system_status['is_running'] = True
+
+                self._log_message("✅ 仿真调度智能体连接成功")
+                self.socketio.emit('scheduler_connected', {
+                    'success': True,
+                    'message': '仿真调度智能体连接成功',
+                    'status': 'connected'
+                })
+
+            except Exception as e:
+                self._log_message(f"❌ 连接仿真调度智能体失败: {e}", level='error')
+                self.socketio.emit('scheduler_connected', {
+                    'success': False,
+                    'error': str(e),
+                    'status': 'failed'
+                })
+
         @self.socketio.on('run_agent')
         def handle_run_agent(data):
             """运行智能体事件"""
@@ -674,7 +711,7 @@ class ADKDevUI:
             message = data.get('message', '')
 
             if not self.multi_agent_system:
-                self.socketio.emit('agent_response', {'error': '系统未初始化'})
+                self.socketio.emit('agent_response', {'error': '请先连接仿真调度智能体'})
                 return
 
             try:

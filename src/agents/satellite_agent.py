@@ -18,6 +18,7 @@ from google.adk.models.lite_llm import LiteLlm
 from google.genai import types
 
 from ..utils.llm_config_manager import get_llm_config_manager
+from ..stk_interface.stk_position_calculator import get_stk_position_calculator
 
 logger = logging.getLogger(__name__)
 logger.info("✅ 使用真实ADK框架于卫星智能体")
@@ -1045,9 +1046,42 @@ class SatelliteAgent(LlmAgent):
         logger.info(f"🛰️ {self.name} 离开讨论组 {old_group}")
     
     def get_satellite_position(self, time: datetime) -> Tuple[float, float, float]:
-        """获取卫星位置（模拟）"""
-        # 这里将集成STK接口获取实际位置
-        return (0.0, 0.0, 1800.0)  # 模拟位置 (lat, lon, alt)
+        """
+        🔧 修复版：获取卫星真实位置
+
+        Args:
+            time: 指定时间
+
+        Returns:
+            (lat, lon, alt) 卫星位置
+        """
+        try:
+            # 🔧 优先使用传入的STK管理器，否则使用全局实例
+            stk_calculator = None
+            if hasattr(self, '_shared_stk_manager') and self._shared_stk_manager:
+                stk_calculator = get_stk_position_calculator(self._shared_stk_manager)
+            else:
+                stk_calculator = get_stk_position_calculator()
+
+            if stk_calculator:
+                position = stk_calculator.get_satellite_position(self.satellite_id, time)
+
+                if position:
+                    logger.debug(f"✅ 从STK获取卫星 {self.satellite_id} 真实位置: "
+                               f"({position.latitude:.4f}°, {position.longitude:.4f}°, {position.altitude:.1f}km)")
+
+                    return (position.latitude, position.longitude, position.altitude)
+                else:
+                    logger.warning(f"⚠️ STK无法获取卫星 {self.satellite_id} 位置，使用模拟位置")
+            else:
+                logger.warning(f"⚠️ STK位置计算器不可用，使用模拟位置")
+
+            # 🔧 回退方案：使用模拟位置
+            return (0.0, 0.0, 1800.0)  # 模拟位置 (lat, lon, alt)
+
+        except Exception as e:
+            logger.error(f"❌ 获取卫星 {self.satellite_id} 位置失败: {e}")
+            return (0.0, 0.0, 1800.0)  # 模拟位置 (lat, lon, alt)
 
     async def update_position(self, position_data: Dict[str, Any]):
         """

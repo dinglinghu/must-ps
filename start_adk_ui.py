@@ -49,7 +49,7 @@ def check_dependencies():
     return True
 
 def get_or_create_multi_agent_system():
-    """获取或创建多智能体系统（避免重复初始化）"""
+    """🔧 修复：UI启动时不自动初始化多智能体系统"""
     global _multi_agent_system
 
     # 检查是否是Flask重启进程
@@ -58,17 +58,13 @@ def get_or_create_multi_agent_system():
         logger.info("🔄 检测到Flask重启进程，跳过多智能体系统初始化")
         return None
 
-    # 只在主进程中初始化一次
+    # 🔧 修复：UI启动时不自动创建多智能体系统
+    # UI应该只提供监控功能，不应该启动仿真系统
     if _multi_agent_system is None:
-        try:
-            from src.agents.multi_agent_system import MultiAgentSystem
-            print("\n🔧 初始化多智能体系统...")
-            _multi_agent_system = MultiAgentSystem()
-            print("✅ 多智能体系统初始化成功")
-        except Exception as e:
-            print(f"⚠️ 多智能体系统初始化失败: {e}")
-            print("UI将在没有多智能体系统的情况下启动")
-            _multi_agent_system = None
+        print("\n📱 UI启动模式：仅提供监控和管理功能")
+        print("💡 如需启动仿真系统，请运行: python main.py")
+        print("⚠️ UI不会自动初始化多智能体系统和STK场景")
+        _multi_agent_system = None
 
     return _multi_agent_system
 

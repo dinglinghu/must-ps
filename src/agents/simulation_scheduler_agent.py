@@ -22,6 +22,7 @@ from ..utils.llm_config_manager import get_llm_config_manager
 from ..utils.time_manager import get_time_manager
 from ..utils.simulation_result_manager import get_simulation_result_manager
 from ..utils.gantt_chart_generator import AerospaceGanttGenerator
+from ..stk_interface.stk_position_calculator import get_stk_position_calculator
 from ..stk_interface.stk_manager import STKManager
 from ..stk_interface.missile_manager import MissileManager
 from ..stk_interface.visibility_calculator import VisibilityCalculator
@@ -246,7 +247,7 @@ class SimulationSchedulerAgent(LlmAgent):
 
     async def _find_nearest_satellites(self, target_position: Dict[str, float], satellites: List[Dict[str, Any]], count: int = 3) -> List[Dict[str, Any]]:
         """
-        找到距离目标最近的卫星
+        🔧 修复版：使用STK真实位置计算找到距离目标最近的卫星
 
         Args:
             target_position: 目标位置 {'lat': 纬度, 'lon': 经度, 'alt': 高度}
@@ -257,12 +258,52 @@ class SimulationSchedulerAgent(LlmAgent):
             距离最近的卫星列表
         """
         try:
-            # 简化的距离计算（实际应该使用STK的位置计算）
-            import math
+            logger.info(f"🎯 使用STK真实位置计算查找最近卫星，目标位置: {target_position}")
 
+            # 🔧 使用STK位置计算器进行真实距离计算
+            if hasattr(self, '_stk_position_calculator') and self._stk_position_calculator:
+                satellite_ids = [sat['id'] for sat in satellites]
+                current_time = self._time_manager.get_current_simulation_time()
+
+                # 使用STK位置计算器查找最近卫星
+                distance_results = self._stk_position_calculator.find_nearest_satellites(
+                    satellite_ids, target_position, current_time, count
+                )
+
+                if distance_results:
+                    nearest_satellites = []
+                    for result in distance_results:
+                        # 找到对应的卫星信息
+                        satellite_info = None
+                        for sat in satellites:
+                            if sat['id'] == result.satellite_position.satellite_id:
+                                satellite_info = sat.copy()
+                                break
+
+                        if satellite_info:
+                            satellite_info['distance'] = result.distance_km
+                            satellite_info['position'] = {
+                                'lat': result.satellite_position.latitude,
+                                'lon': result.satellite_position.longitude,
+                                'alt': result.satellite_position.altitude
+                            }
+                            nearest_satellites.append(satellite_info)
+
+                            logger.info(f"   ✅ {result.satellite_position.satellite_id}: {result.distance_km:.1f} km")
+
+                    logger.info(f"✅ STK真实位置计算完成，找到 {len(nearest_satellites)} 颗最近卫星")
+                    return nearest_satellites
+                else:
+                    logger.warning("⚠️ STK位置计算器未返回有效结果，使用回退方案")
+            else:
+                logger.warning("⚠️ STK位置计算器不可用，使用回退方案")
+
+            # 🔧 回退方案：使用简化的距离计算
+            import math
             nearest_satellites = []
+
             for satellite in satellites:
-                # 模拟卫星位置（实际应该从STK获取）
+                # 模拟卫星位置（回退方案）
                 sat_lat = (hash(satellite['id']) % 180) - 90  # -90 到 90
                 sat_lon = (hash(satellite['id']) % 360) - 180  # -180 到 180
 
@@ -280,6 +321,7 @@ class SimulationSchedulerAgent(LlmAgent):
 
             # 按距离排序并返回最近的几颗
             nearest_satellites.sort(key=lambda x: x['distance'])
+            logger.info(f"✅ 回退方案计算完成，找到 {len(nearest_satellites[:count])} 颗最近卫星")
             return nearest_satellites[:count]
 
         except Exception as e:
@@ -383,9 +425,17 @@ class SimulationSchedulerAgent(LlmAgent):
         """初始化系统组件"""
         try:
             logger.info(f"开始初始化组件，_config_manager存在: {hasattr(self, '_config_manager')}")
-            # STK管理器
-            stk_config = self._config_manager.get_stk_config()
-            self._stk_manager = STKManager(stk_config)
+            # 🔧 修复：STK管理器 - 使用全局实例或创建新实例
+            from ..stk_interface.stk_manager import get_stk_manager
+            self._stk_manager = get_stk_manager(self._config_manager)
+
+            # 🔧 修复：仿真调度智能体初始化时不自动连接STK
+            # STK连接应该由用户触发，而不是在初始化时自动连接
+            logger.info("📋 仿真调度智能体已准备就绪，等待用户触发STK连接")
+            logger.info("💡 用户可以通过工具手动连接STK并创建场景")
+
+            # 🔧 新增：STK位置计算器，用于真实的卫星位置计算
+            self._stk_position_calculator = get_stk_position_calculator(self._stk_manager)
 
             # 其他组件
             self._missile_manager = None
@@ -1174,11 +1224,26 @@ class SimulationSchedulerAgent(LlmAgent):
     async def _execute_planning_cycle(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         """执行一轮规划周期 - 包含导弹创建、元任务生成和任务分发"""
         try:
-            # 0. 确保卫星智能体系统已初始化
-            if not self._satellite_agents or len(self._satellite_agents) == 0:
+            # 0. 🔧 修复：智能检查卫星智能体系统状态
+            satellites = self._stk_manager.get_objects("Satellite") if self._stk_manager else []
+
+            # 检查是否需要初始化系统
+            need_initialization = False
+
+            if not satellites or len(satellites) == 0:
+                need_initialization = True
+                reason = "STK场景中没有卫星"
+            elif not self._satellite_agents or len(self._satellite_agents) == 0:
+                need_initialization = True
+                reason = "卫星智能体未创建"
+            elif len(self._satellite_agents) != len(satellites):
+                need_initialization = True
+                reason = f"卫星智能体数量({len(self._satellite_agents)})与STK卫星数量({len(satellites)})不匹配"
+
+            if need_initialization:
                 yield Event(
                     author=self.name,
-                    content=types.Content(parts=[types.Part(text="🔧 Step 0: 检测到卫星智能体未初始化，开始初始化...")])
+                    content=types.Content(parts=[types.Part(text=f"🔧 Step 0: 检测到系统需要初始化 - {reason}，开始初始化...")])
                 )
 
                 # 调用完整系统初始化
@@ -1195,6 +1260,14 @@ class SimulationSchedulerAgent(LlmAgent):
                         author=self.name,
                         content=types.Content(parts=[types.Part(text="✅ 卫星智能体系统初始化完成")])
                     )
+            else:
+                # 系统已正常，直接进行规划
+                satellite_ids = [sat.split('/')[-1] for sat in satellites]
+                agent_ids = list(self._satellite_agents.keys())
+                yield Event(
+                    author=self.name,
+                    content=types.Content(parts=[types.Part(text=f"✅ 系统状态正常: {len(satellites)}颗卫星，{len(self._satellite_agents)}个智能体")])
+                )
 
             # 1. 按概率创建导弹目标
             yield Event(
@@ -2318,13 +2391,14 @@ class SimulationSchedulerAgent(LlmAgent):
     
     # 辅助方法（复用现有代码）
     async def _connect_stk(self) -> bool:
-        """连接STK"""
+        """连接STK - 智能体工具只能连接现有场景"""
         try:
             if self._stk_manager:
-                return self._stk_manager.connect()
+                # 🔧 修复：智能体工具禁止创建新场景
+                return self._stk_manager.connect("仿真调度智能体", allow_scenario_creation=False)
             return False
         except Exception as e:
-            logger.error(f"STK连接失败: {e}")
+            logger.error(f"仿真调度智能体STK连接失败: {e}")
             return False
 
     def _initialize_managers(self) -> bool:
@@ -2600,6 +2674,14 @@ class SimulationSchedulerAgent(LlmAgent):
         try:
             logger.info("🌟 开始创建Walker星座...")
 
+            # 🔧 修复：首先检查现有卫星，避免重复创建
+            existing_satellites = self._stk_manager.get_objects("Satellite")
+            if existing_satellites and len(existing_satellites) > 0:
+                satellite_ids = [sat.split('/')[-1] for sat in existing_satellites]
+                logger.info(f"🔍 检测到现有Walker星座，共 {len(existing_satellites)} 颗卫星")
+                logger.info(f"📡 现有卫星: {satellite_ids}")
+                return f"✅ Walker星座已存在，共 {len(existing_satellites)} 颗卫星: {satellite_ids}"
+
             # 确保星座管理器已初始化
             if not self._constellation_manager:
                 from ..constellation.constellation_manager import ConstellationManager
@@ -2635,6 +2717,13 @@ class SimulationSchedulerAgent(LlmAgent):
         """创建卫星智能体"""
         try:
             logger.info("🤖 开始创建卫星智能体...")
+
+            # 🔧 修复：检查是否已有卫星智能体，避免重复创建
+            if self._satellite_agents and len(self._satellite_agents) > 0:
+                agent_ids = list(self._satellite_agents.keys())
+                logger.info(f"🔍 检测到现有卫星智能体 {len(self._satellite_agents)} 个，跳过创建")
+                logger.info(f"🤖 现有智能体: {agent_ids}")
+                return f"✅ 卫星智能体已存在，共 {len(self._satellite_agents)} 个: {agent_ids}"
 
             # 导入卫星智能体工厂
             from ..agents.satellite_agent_factory import SatelliteAgentFactory
@@ -3342,43 +3431,7 @@ class SimulationSchedulerAgent(LlmAgent):
             logger.error(f"❌ 计算中心位置失败: {e}")
             return {'lat': 0.0, 'lon': 0.0, 'alt': 0.0}
 
-    async def _find_nearest_satellites(self, center_position: Dict[str, float], satellites: List[Dict], count: int) -> List[Dict]:
-        """找到距离中心位置最近的卫星"""
-        try:
-            if not satellites:
-                return []
-
-            # 简化的距离计算（实际应该使用球面距离）
-            def calculate_distance(sat_pos, center_pos):
-                lat_diff = sat_pos.get('lat', 0.0) - center_pos.get('lat', 0.0)
-                lon_diff = sat_pos.get('lon', 0.0) - center_pos.get('lon', 0.0)
-                return (lat_diff ** 2 + lon_diff ** 2) ** 0.5
-
-            # 为每颗卫星计算距离
-            satellites_with_distance = []
-            for satellite in satellites:
-                # 模拟卫星位置（实际应该从STK获取）
-                sat_position = {
-                    'lat': satellite.get('lat', 0.0),
-                    'lon': satellite.get('lon', 0.0),
-                    'alt': satellite.get('alt', 600.0)  # 默认600km轨道
-                }
-
-                distance = calculate_distance(sat_position, center_position)
-
-                satellite_with_distance = satellite.copy()
-                satellite_with_distance['distance'] = distance
-                satellites_with_distance.append(satellite_with_distance)
-
-            # 按距离排序
-            satellites_with_distance.sort(key=lambda x: x['distance'])
-
-            # 返回最近的N颗卫星
-            return satellites_with_distance[:count]
-
-        except Exception as e:
-            logger.error(f"❌ 查找最近卫星失败: {e}")
-            return []
+    # 🔧 已删除旧版本的_find_nearest_satellites方法，使用上面的STK集成版本
 
     # 🧹 已清理：generate_mission_gantt_charts 方法已删除
     # 原因：依赖的甘特图模块已被清理，该功能在当前GDOP分析流程中未被使用

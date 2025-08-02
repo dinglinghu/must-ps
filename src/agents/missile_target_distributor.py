@@ -20,6 +20,7 @@ from google.genai import types
 from .satellite_agent import SatelliteAgent, TaskInfo
 from ..utils.config_manager import get_config_manager
 from ..utils.time_manager import get_time_manager
+from ..stk_interface.stk_position_calculator import get_stk_position_calculator
 
 logger = logging.getLogger(__name__)
 logger.info("✅ 使用真实ADK框架于导弹目标分发器")
@@ -76,6 +77,9 @@ class MissileTargetDistributor(BaseAgent):
         
         self._config_manager = config_manager or get_config_manager()
         self._time_manager = get_time_manager(self._config_manager)
+
+        # 🔧 新增：STK位置计算器，用于真实的卫星位置计算
+        self._stk_position_calculator = get_stk_position_calculator()
         
         # 获取配置
         self._system_config = self._config_manager.config.get('multi_agent_system', {})
@@ -297,24 +301,53 @@ class MissileTargetDistributor(BaseAgent):
         time: datetime
     ) -> Dict[str, float]:
         """
-        获取卫星在指定时间的位置
-        
+        🔧 修复版：获取卫星在指定时间的真实位置
+
         Args:
             satellite_agent: 卫星智能体
             time: 指定时间
-            
+
         Returns:
             位置信息 {lat, lon, alt}
         """
         try:
-            # 简化实现：返回模拟位置
-            # 实际应该从STK或轨道预测模块获取精确位置
+            # 🔧 使用STK位置计算器获取真实位置
+            satellite_id = satellite_agent.satellite_id
+
+            if self._stk_position_calculator:
+                position = self._stk_position_calculator.get_satellite_position(satellite_id, time)
+
+                if position:
+                    logger.debug(f"✅ 从STK获取卫星 {satellite_id} 真实位置: "
+                               f"({position.latitude:.4f}°, {position.longitude:.4f}°, {position.altitude:.1f}km)")
+
+                    return {
+                        'lat': position.latitude,
+                        'lon': position.longitude,
+                        'alt': position.altitude
+                    }
+                else:
+                    logger.warning(f"⚠️ STK无法获取卫星 {satellite_id} 位置，使用默认位置")
+
+            # 🔧 回退方案：如果STK不可用，使用卫星智能体的位置方法
+            try:
+                sat_lat, sat_lon, sat_alt = satellite_agent.get_satellite_position(time)
+                return {
+                    'lat': sat_lat,
+                    'lon': sat_lon,
+                    'alt': sat_alt
+                }
+            except Exception as fallback_error:
+                logger.warning(f"⚠️ 卫星智能体位置获取失败: {fallback_error}")
+
+            # 🔧 最终回退：使用模拟位置
+            logger.warning(f"⚠️ 使用模拟位置作为最终回退方案")
             return {
                 'lat': 0.0,  # 纬度
                 'lon': 0.0,  # 经度
                 'alt': 1800.0  # 高度（公里）
             }
-            
+
         except Exception as e:
             logger.error(f"❌ 获取卫星位置失败: {e}")
             return {'lat': 0.0, 'lon': 0.0, 'alt': 0.0}

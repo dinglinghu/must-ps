@@ -37,14 +37,21 @@ class ConstellationManager:
         """
         try:
             logger.info("🌟 开始创建Walker星座...")
-            
+
             # 检查STK连接
             if not self.stk_manager.is_connected:
                 logger.error("❌ STK未连接，无法创建星座")
                 return False
-            
+
+            # 🔧 修复：检查现有卫星，避免重复创建
+            existing_satellites = self.stk_manager.get_objects("Satellite")
+            if existing_satellites and len(existing_satellites) > 0:
+                logger.info(f"🔍 检测到现有卫星 {len(existing_satellites)} 颗，跳过Walker星座创建")
+                logger.info(f"📡 现有卫星: {[sat.split('/')[-1] for sat in existing_satellites]}")
+                return True
+
             # 检查是否跳过创建（现有项目检测）
-            if self.stk_manager.should_skip_creation():
+            if self.stk_manager.should_skip_stk_creation():
                 logger.info("🔍 检测到现有项目，跳过星座创建")
                 return True
             

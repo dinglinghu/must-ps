@@ -42,50 +42,34 @@ class STKVisibilityCalculator:
     通过STK COM接口实现卫星对目标的可见性时间窗口计算
     """
     
-    def __init__(self, stk_app_path: Optional[str] = None):
+    def __init__(self, stk_manager=None):
         """
-        初始化STK可见窗口计算器
-        
+        🔧 修复：初始化STK可见窗口计算器，必须使用现有STK管理器
+
         Args:
-            stk_app_path: STK应用程序路径（可选）
+            stk_manager: 现有的STK管理器实例
         """
-        self.stk_app_path = stk_app_path
-        self._stk_app = None
-        self._stk_root = None
-        self._scenario = None
-        
-        # 初始化STK连接
-        self._init_stk_connection()
-        
-        logger.info("🛰️ STK可见窗口计算器初始化完成")
+        if stk_manager is None:
+            logger.error("❌ STK可见性计算器必须传入有效的STK管理器")
+            raise RuntimeError("STK可见性计算器必须使用现有的STK管理器")
+
+        self.stk_manager = stk_manager
+        self._stk_app = stk_manager.stk
+        self._stk_root = stk_manager.root
+        self._scenario = stk_manager.scenario
+
+        # 验证STK连接
+        if not self._stk_app or not self._stk_root or not self._scenario:
+            logger.error("❌ STK管理器中缺少必要的组件")
+            raise RuntimeError("STK管理器必须包含有效的STK应用、根对象和场景")
+
+        logger.info(f"✅ STK可见窗口计算器初始化完成，使用场景: {self._scenario.InstanceName}")
     
     def _init_stk_connection(self):
-        """初始化STK连接"""
-        try:
-            # 尝试连接到STK
-            # 注意：这需要在Windows环境下运行，并且安装了STK
-            import win32com.client as win32
-            
-            # 连接到STK应用程序
-            self._stk_app = win32.Dispatch("STK12.Application")
-            self._stk_app.Visible = True
-            self._stk_app.UserControl = True
-            
-            # 获取STK根对象
-            self._stk_root = self._stk_app.Personality2
-            
-            # 创建或连接到场景
-            self._init_scenario()
-            
-            logger.info("✅ STK连接建立成功")
-            
-        except ImportError:
-            logger.warning("⚠️ win32com.client未安装，使用模拟模式")
-            self._use_simulation_mode()
-            
-        except Exception as e:
-            logger.warning(f"⚠️ STK连接失败，使用模拟模式: {e}")
-            self._use_simulation_mode()
+        """🔧 修复：禁用独立STK连接，必须使用现有STK管理器"""
+        logger.error("❌ STK可见性计算器不应该独立创建STK连接")
+        logger.error("❌ 请使用 STKVisibilityCalculator(stk_manager) 传入现有的STK管理器")
+        raise RuntimeError("STK可见性计算器不允许独立创建STK连接，必须使用现有的STK管理器")
     
     def _use_simulation_mode(self):
         """使用模拟模式"""
@@ -95,25 +79,35 @@ class STKVisibilityCalculator:
         logger.info("🔄 STK可见窗口计算器运行在模拟模式")
     
     def _init_scenario(self):
-        """初始化STK场景"""
+        """🔧 修复：只能使用现有STK场景，禁止创建新场景"""
         try:
             if self._stk_root is None:
+                logger.error("❌ STK根对象不存在")
                 return
-                
-            # 尝试获取当前场景
+
+            # 🔧 新增：检查场景生命周期状态
+            from src.stk_interface.stk_manager import STKManager
+            if STKManager.is_scenario_lifecycle_locked():
+                logger.info("🔒 STK可见性计算器 - 场景生命周期已锁定，只能连接现有场景")
+
+            # 🔧 修复：只获取当前场景，禁止创建新场景
             try:
                 self._scenario = self._stk_root.CurrentScenario
-                logger.info(f"✅ 连接到现有STK场景: {self._scenario.InstanceName}")
-            except:
-                # 创建新场景
-                scenario_name = f"ADK_Scenario_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                self._stk_root.NewScenario(scenario_name)
-                self._scenario = self._stk_root.CurrentScenario
-                logger.info(f"✅ 创建新STK场景: {scenario_name}")
-                
+                if self._scenario:
+                    logger.info(f"✅ STK可见性计算器连接到现有STK场景: {self._scenario.InstanceName}")
+                else:
+                    logger.error("❌ 没有当前STK场景")
+                    logger.error("❌ STK可见性计算器不能创建新场景，必须使用现有场景")
+                    raise RuntimeError("STK可见性计算器必须使用现有的STK场景")
+            except Exception as e:
+                logger.error(f"❌ 获取现有STK场景失败: {e}")
+                logger.error("❌ STK可见性计算器不能创建新场景，必须使用现有场景")
+                raise RuntimeError("STK可见性计算器必须使用现有的STK场景")
+
         except Exception as e:
             logger.error(f"❌ STK场景初始化失败: {e}")
             self._scenario = None
+            raise
     
     def calculate_visibility_windows(
         self,
